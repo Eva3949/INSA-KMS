@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  kms-postgres:
+    image: postgres:15-alpine
+    container_name: kms-postgres-prod
+    restart: always
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-kmsdb}
+      POSTGRES_USER: ${DATABASE_USERNAME:-kmsuser}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - kms-postgres-prod-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-kmsuser} -d ${DATABASE_NAME:-kmsdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kms-keycloak:
+    image: quay.io/keycloak/keycloak:24.0.1
+    container_name: kms-keycloak-prod
+    restart: always
+    command: start --import-realm --optimized
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://kms-postgres:5432/${DATABASE_NAME:-kmsdb}
+      KC_DB_USERNAME: ${DATABASE_USERNAME:-kmsuser}
+      KC_DB_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
+      KC_HOSTNAME: ${KEYCLOAK_URL:-https://kms.enterprise.internal/auth}
+      KC_PROXY: edge
+      KC_HTTP_ENABLED: 'true'
+    ports:
+      - "8080:8080"
+    depends_on:
+      kms-postgres:
+        condition: service_healthy
+
+  kms-backend-1:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kms-backend-prod-1
+    restart: always
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://kms-postgres:5432/${DATABASE_NAME:-kmsdb}
+      SPRING_DATASOURCE_USERNAME: ${DATABASE_USERNAME:-kmsuser}
+      SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_URL:-https://kms.enterprise.internal}/realms/kms-realm
+      MS_GRAPH_CLIENT_ID: ${MS_GRAPH_CLIENT_ID:-00000000-0000-0000-0000-000000000000}
+      MS_GRAPH_CLIENT_SECRET: ${MS_GRAPH_CLIENT_SECRET:-placeholder}
+      MS_GRAPH_TENANT_ID: ${MS_GRAPH_TENANT_ID:-common}
+    depends_on:
+      kms-postgres:
+        condition: service_healthy
+      kms-keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/api/v1/health/liveness || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  kms-backend-2:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kms-backend-prod-2
+    restart: always
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://kms-postgres:5432/${DATABASE_NAME:-kmsdb}
+      SPRING_DATASOURCE_USERNAME: ${DATABASE_USERNAME:-kmsuser}
+      SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_URL:-https://kms.enterprise.internal}/realms/kms-realm
+      MS_GRAPH_CLIENT_ID: ${MS_GRAPH_CLIENT_ID:-00000000-0000-0000-0000-000000000000}
+      MS_GRAPH_CLIENT_SECRET: ${MS_GRAPH_CLIENT_SECRET:-placeholder}
+      MS_GRAPH_TENANT_ID: ${MS_GRAPH_TENANT_ID:-common}
+    depends_on:
+      kms-postgres:
+        condition: service_healthy
+      kms-keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/api/v1/health/liveness || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  kms-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: kms-frontend-prod
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: https://${DOMAIN:-kms.enterprise.internal}/api/v1
+      NEXT_PUBLIC_KEYCLOAK_URL: https://${DOMAIN:-kms.enterprise.internal}/realms/kms-realm
+    ports:
+      - "3000:3000"
+
+  kms-nginx-tls:
+    image: nginx:alpine
+    container_name: kms-nginx-tls-prod
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-prod.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - kms-backend-1
+      - kms-backend-2
+      - kms-frontend
+
+volumes:
+  kms-postgres-prod-data:

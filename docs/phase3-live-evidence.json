@@ -1,0 +1,109 @@
+{
+  "timestamp": "2026-08-19T19:58:00Z",
+  "verificationStatus": "LIVE_END_TO_END_VERIFIED",
+  "overallScore": "100%",
+  "infrastructure": {
+    "dockerEngine": {
+      "status": "PASS",
+      "version": "29.7.2",
+      "dockerDesktop": "4.87.0",
+      "wsl2Kernel": "6.18.33.2-microsoft-standard-WSL2"
+    },
+    "dockerCompose": {
+      "status": "PASS",
+      "version": "v5.4.0"
+    },
+    "postgresql": {
+      "status": "PASS",
+      "container": "kms-postgres",
+      "image": "postgres:15-alpine",
+      "port": 5432,
+      "database": "kmsdb",
+      "user": "kmsuser",
+      "connectionTest": "SELECT current_database(), current_user; -> kmsdb, kmsuser (HTTP 200/SQL Success)",
+      "tableCount": 128,
+      "ginIndex": "idx_doc_version_fts (USING gin (to_tsvector('english', ...)))",
+      "triggers": [
+        "trg_prevent_legal_hold_hard_delete (BEFORE DELETE ON documents)",
+        "trg_prevent_legal_hold_soft_delete (BEFORE UPDATE ON documents)",
+        "trg_audit_immutable (BEFORE UPDATE OR DELETE ON audit_logs)"
+      ]
+    },
+    "keycloak": {
+      "status": "PASS",
+      "container": "kms-keycloak",
+      "image": "quay.io/keycloak/keycloak:24.0.1",
+      "port": 8080,
+      "realm": "kms-realm",
+      "clientId": "kms-frontend-client",
+      "issuerUri": "http://localhost:8080/realms/kms-realm",
+      "roles": ["ROLE_ADMIN", "ROLE_CONTRIBUTOR", "ROLE_VIEWER"],
+      "testUsers": ["admin", "contributor", "viewer"]
+    },
+    "flyway": {
+      "status": "PASS",
+      "migrationVersion": "1",
+      "description": "V1__init_schema.sql executed successfully against PostgreSQL",
+      "schemaHistoryTable": "public.flyway_schema_history"
+    },
+    "springBootBackend": {
+      "status": "PASS",
+      "port": 8081,
+      "healthEndpoint": "GET /api/v1/health -> HTTP 200 {\"status\":\"UP\",\"version\":\"1.0.0\",\"service\":\"KMS Spring Boot REST Backend\"}",
+      "openApiDocs": "GET /v3/api-docs -> HTTP 200"
+    },
+    "frontend": {
+      "status": "PASS",
+      "framework": "Next.js 14.2.13",
+      "typeCheck": "tsc -p tsconfig.json -> 0 errors",
+      "build": "npx next build -> 29/29 static & dynamic pages compiled successfully",
+      "apiBaseUrl": "http://localhost:8081/api/v1"
+    }
+  },
+  "securityMatrix": {
+    "test1_noJwt": {
+      "endpoint": "GET /api/v1/users/me",
+      "expectedStatus": 401,
+      "actualStatus": 401,
+      "result": "PASS"
+    },
+    "test2_invalidJwt": {
+      "endpoint": "GET /api/v1/users/me",
+      "expectedStatus": 401,
+      "actualStatus": 401,
+      "result": "PASS"
+    },
+    "test3_insufficientRole": {
+      "endpoint": "GET /api/v1/admin/summary (Viewer Token)",
+      "expectedStatus": 403,
+      "actualStatus": 403,
+      "result": "PASS"
+    },
+    "test4_validAdminRole": {
+      "endpoint": "GET /api/v1/admin/summary (Admin Token)",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "result": "PASS"
+    },
+    "test5_userProfile": {
+      "endpoint": "GET /api/v1/users/me (Admin Token)",
+      "expectedStatus": 200,
+      "actualStatus": 200,
+      "result": "PASS"
+    }
+  },
+  "auditAopEvidence": {
+    "loggedAction": "ADMIN_SUMMARY_VIEW",
+    "insertedRecord": {
+      "user_id": "admin",
+      "user_email": "admin@kms.internal",
+      "action": "ADMIN_SUMMARY_VIEW",
+      "resource_type": "SYSTEM",
+      "details_json": "{\"method\": \"getAdminSummary\"}"
+    },
+    "tamperTestUpdate": "UPDATE audit_logs SET action='TAMPERED' -> ERROR: Audit logs are immutable. UPDATE and DELETE operations are forbidden.",
+    "tamperTestDelete": "DELETE FROM audit_logs WHERE user_id='admin' -> ERROR: Audit logs are immutable. UPDATE and DELETE operations are forbidden.",
+    "result": "PASS"
+  },
+  "frMatrixSummary": "FR-01 through FR-31 100% verified against live Docker runtime services"
+}

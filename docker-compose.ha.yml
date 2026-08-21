@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  kms-postgres:
+    image: postgres:15-alpine
+    container_name: kms-postgres
+    environment:
+      POSTGRES_DB: kmsdb
+      POSTGRES_USER: kmsuser
+      POSTGRES_PASSWORD: kmspassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - kms-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kmsuser -d kmsdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kms-keycloak:
+    image: quay.io/keycloak/keycloak:24.0.1
+    container_name: kms-keycloak
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://kms-postgres:5432/kmsdb
+      KC_DB_USERNAME: kmsuser
+      KC_DB_PASSWORD: kmspassword
+    ports:
+      - "8080:8080"
+    depends_on:
+      kms-postgres:
+        condition: service_healthy
+
+  kms-backend-1:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kms-backend-1
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://kms-postgres:5432/kmsdb
+      SPRING_DATASOURCE_USERNAME: kmsuser
+      SPRING_DATASOURCE_PASSWORD: kmspassword
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8080/realms/kms-realm
+    depends_on:
+      kms-postgres:
+        condition: service_healthy
+      kms-keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  kms-backend-2:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kms-backend-2
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://kms-postgres:5432/kmsdb
+      SPRING_DATASOURCE_USERNAME: kmsuser
+      SPRING_DATASOURCE_PASSWORD: kmspassword
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8080/realms/kms-realm
+    depends_on:
+      kms-postgres:
+        condition: service_healthy
+      kms-keycloak:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  kms-load-balancer:
+    image: nginx:alpine
+    container_name: kms-load-balancer
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx/nginx-ha.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - kms-backend-1
+      - kms-backend-2
+
+volumes:
+  kms-postgres-data:
