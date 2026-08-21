@@ -5,6 +5,7 @@ services:
     dockerfilePath: ./Dockerfile.keycloak
     region: virginia
     plan: free
+    startCommand: /opt/keycloak/bin/kc.sh start-dev --import-realm --hostname-strict=false --hostname-strict-backchannel=false --hostname-strict-https=false --http-enabled=true --proxy-headers=xforwarded
     envVars:
       - key: KEYCLOAK_ADMIN
         value: admin

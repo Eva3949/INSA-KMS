@@ -12,9 +12,10 @@ ENV KC_HOSTNAME_STRICT_BACKCHANNEL=false
 ENV KC_HOSTNAME_STRICT_HTTPS=false
 ENV KC_HTTP_ENABLED=true
 ENV KC_PROXY_HEADERS=xforwarded
+ENV KC_HTTP_PORT=8080
 
-# Bake non-strict hostname handling directly into Quarkus build-time properties
+# Build Quarkus configuration with explicit non-strict options
 RUN /opt/keycloak/bin/kc.sh build --db=postgres --hostname-strict=false --hostname-strict-backchannel=false --hostname-strict-https=false --http-enabled=true
 
 # Start Keycloak with auto-import
-ENTRYPOINT ["/opt/keycloak/bin/kc.sh", "start-dev", "--import-realm"]
+ENTRYPOINT ["/opt/keycloak/bin/kc.sh", "start-dev", "--import-realm", "--hostname-strict=false", "--hostname-strict-backchannel=false", "--hostname-strict-https=false", "--http-enabled=true", "--proxy-headers=xforwarded"]
