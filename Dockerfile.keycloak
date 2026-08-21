@@ -1,21 +1,24 @@
 FROM quay.io/keycloak/keycloak:24.0.1
 
-# Copy pre-configured realm import file
+# Copy realm import file
 COPY keycloak/kms-realm.json /opt/keycloak/data/import/kms-realm.json
 
-# Environment variables for runtime execution on Render
+# Runtime environment variables (ignored during build, applied at runtime)
 ENV KC_DB=postgres
-ENV KC_HEALTH_ENABLED=true
-ENV KC_METRICS_ENABLED=true
+ENV KC_HTTP_ENABLED=true
+ENV KC_HTTP_PORT=8080
+ENV KC_PROXY_HEADERS=xforwarded
 ENV KC_HOSTNAME_STRICT=false
 ENV KC_HOSTNAME_STRICT_BACKCHANNEL=false
 ENV KC_HOSTNAME_STRICT_HTTPS=false
-ENV KC_HTTP_ENABLED=true
-ENV KC_PROXY_HEADERS=xforwarded
-ENV KC_HTTP_PORT=8080
+ENV KC_HEALTH_ENABLED=true
+ENV KC_METRICS_ENABLED=true
 
-# Build Keycloak image for PostgreSQL (using valid build-time flags only)
+# Limit JVM heap to stay within Render free tier RAM (512MB)
+ENV JAVA_OPTS_APPEND="-Xmx384m -Xms128m -XX:MetaspaceSize=96M -XX:MaxMetaspaceSize=256m"
+
+# Build with only valid build-time options (no runtime flags here)
 RUN /opt/keycloak/bin/kc.sh build --db=postgres
 
-# Runtime entrypoint
-ENTRYPOINT ["/opt/keycloak/bin/kc.sh", "start-dev", "--import-realm"]
+# Start in optimized mode (uses ~300MB vs ~1GB for start-dev)
+ENTRYPOINT ["/opt/keycloak/bin/kc.sh", "start", "--optimized", "--import-realm", "--hostname-strict=false", "--hostname-strict-https=false", "--hostname-strict-backchannel=false", "--http-enabled=true", "--http-port=8080", "--proxy-headers=xforwarded"]
