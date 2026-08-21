@@ -23,17 +23,14 @@ services:
     container_name: kms-keycloak
     command: start-dev --import-realm
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://kms-postgres:5432/kmsdb
-      KC_DB_USERNAME: kmsuser
-      KC_DB_PASSWORD: kmspassword
+      KC_DB_URL: ${KC_DB_URL:-jdbc:postgresql://${DATABASE_HOST:-kms-postgres}:${DATABASE_PORT:-5432}/${DATABASE_NAME:-kmsdb}${DATABASE_SSLMODE:-}}
+      KC_DB_USERNAME: ${DATABASE_USERNAME:-kmsuser}
+      KC_DB_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
     ports:
       - "8080:8080"
-    depends_on:
-      kms-postgres:
-        condition: service_healthy
 
   kms-backend-1:
     build:
@@ -41,13 +38,11 @@ services:
       dockerfile: Dockerfile
     container_name: kms-backend-1
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://kms-postgres:5432/kmsdb
-      SPRING_DATASOURCE_USERNAME: kmsuser
-      SPRING_DATASOURCE_PASSWORD: kmspassword
-      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8080/realms/kms-realm
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://${DATABASE_HOST:-kms-postgres}:${DATABASE_PORT:-5432}/${DATABASE_NAME:-kmsdb}${DATABASE_SSLMODE:-}}
+      SPRING_DATASOURCE_USERNAME: ${DATABASE_USERNAME:-kmsuser}
+      SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_URL:-http://localhost:8080}/realms/kms-realm
     depends_on:
-      kms-postgres:
-        condition: service_healthy
       kms-keycloak:
         condition: service_started
     healthcheck:
@@ -62,13 +57,11 @@ services:
       dockerfile: Dockerfile
     container_name: kms-backend-2
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://kms-postgres:5432/kmsdb
-      SPRING_DATASOURCE_USERNAME: kmsuser
-      SPRING_DATASOURCE_PASSWORD: kmspassword
-      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://localhost:8080/realms/kms-realm
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://${DATABASE_HOST:-kms-postgres}:${DATABASE_PORT:-5432}/${DATABASE_NAME:-kmsdb}${DATABASE_SSLMODE:-}}
+      SPRING_DATASOURCE_USERNAME: ${DATABASE_USERNAME:-kmsuser}
+      SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_URL:-http://localhost:8080}/realms/kms-realm
     depends_on:
-      kms-postgres:
-        condition: service_healthy
       kms-keycloak:
         condition: service_started
     healthcheck:

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: kms-keycloak
+    env: docker
+    dockerfilePath: ./Dockerfile.keycloak
+    region: virginia
+    plan: free
+    envVars:
+      - key: KEYCLOAK_ADMIN
+        value: admin
+      - key: KEYCLOAK_ADMIN_PASSWORD
+        value: admin
+      - key: KC_DB
+        value: postgres
+      - key: KC_DB_URL
+        value: jdbc:postgresql://dpg-da43olv40ujc73cpl09g-a.virginia-postgres.render.com:5432/insakms?sslmode=require
+      - key: KC_DB_USERNAME
+        value: insakms_user
+      - key: KC_DB_PASSWORD
+        value: hLYoKjsf0GlpZbKCNfSDZ8aRGoR0oMYS
+      - key: KC_HTTP_ENABLED
+        value: "true"
+      - key: KC_PROXY_HEADERS
+        value: "xforwarded"

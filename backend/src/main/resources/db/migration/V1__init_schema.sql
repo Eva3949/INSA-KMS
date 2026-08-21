@@ -4,13 +4,32 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Enums
-CREATE TYPE confidentiality_level_enum AS ENUM ('PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED');
-CREATE TYPE document_status_enum AS ENUM ('DRAFT', 'UNDER_REVIEW', 'PUBLISHED', 'ARCHIVED');
-CREATE TYPE permission_level_enum AS ENUM ('VIEW', 'EDIT', 'DELETE', 'ADMIN');
-CREATE TYPE subject_type_enum AS ENUM ('USER', 'GROUP', 'ROLE');
+DO $$ BEGIN
+    CREATE TYPE confidentiality_level_enum AS ENUM ('PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE document_status_enum AS ENUM ('DRAFT', 'UNDER_REVIEW', 'PUBLISHED', 'ARCHIVED');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE permission_level_enum AS ENUM ('VIEW', 'EDIT', 'DELETE', 'ADMIN');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE subject_type_enum AS ENUM ('USER', 'GROUP', 'ROLE');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- 1. Departments
-CREATE TABLE departments (
+CREATE TABLE IF NOT EXISTS departments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL UNIQUE,
     code VARCHAR(20) NOT NULL UNIQUE,
@@ -19,7 +38,7 @@ CREATE TABLE departments (
 );
 
 -- 2. Users
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     keycloak_sub VARCHAR(100) NOT NULL UNIQUE,
     username VARCHAR(100) NOT NULL,
@@ -29,7 +48,7 @@ CREATE TABLE users (
 );
 
 -- 3. Groups
-CREATE TABLE groups (
+CREATE TABLE IF NOT EXISTS groups (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL UNIQUE,
     department_id UUID REFERENCES departments(id),
@@ -37,14 +56,14 @@ CREATE TABLE groups (
 );
 
 -- 4. User Groups
-CREATE TABLE user_groups (
+CREATE TABLE IF NOT EXISTS user_groups (
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, group_id)
 );
 
 -- 5. Roles
-CREATE TABLE roles (
+CREATE TABLE IF NOT EXISTS roles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     role_name VARCHAR(50) NOT NULL UNIQUE,
     description TEXT,
@@ -52,7 +71,7 @@ CREATE TABLE roles (
 );
 
 -- 6. Role Permissions
-CREATE TABLE role_permissions (
+CREATE TABLE IF NOT EXISTS role_permissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     role_id UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
     permission_key VARCHAR(100) NOT NULL,
@@ -60,7 +79,7 @@ CREATE TABLE role_permissions (
 );
 
 -- 7. Folders
-CREATE TABLE folders (
+CREATE TABLE IF NOT EXISTS folders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
     parent_id UUID REFERENCES folders(id) ON DELETE CASCADE,
@@ -72,7 +91,7 @@ CREATE TABLE folders (
 );
 
 -- 8. Folder Permissions
-CREATE TABLE folder_permissions (
+CREATE TABLE IF NOT EXISTS folder_permissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     folder_id UUID NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
     subject_type subject_type_enum NOT NULL,
@@ -81,7 +100,7 @@ CREATE TABLE folder_permissions (
 );
 
 -- 9. Document Types
-CREATE TABLE document_types (
+CREATE TABLE IF NOT EXISTS document_types (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
@@ -89,7 +108,7 @@ CREATE TABLE document_types (
 );
 
 -- 10. Documents
-CREATE TABLE documents (
+CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     folder_id UUID REFERENCES folders(id),
     title VARCHAR(255) NOT NULL,
@@ -107,7 +126,7 @@ CREATE TABLE documents (
 );
 
 -- 12. Storage Objects
-CREATE TABLE storage_objects (
+CREATE TABLE IF NOT EXISTS storage_objects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     storage_path VARCHAR(500) NOT NULL UNIQUE,
     checksum_sha256 VARCHAR(64) NOT NULL UNIQUE,
@@ -116,7 +135,7 @@ CREATE TABLE storage_objects (
 );
 
 -- 35. File Checksums
-CREATE TABLE file_checksums (
+CREATE TABLE IF NOT EXISTS file_checksums (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     storage_object_id UUID NOT NULL REFERENCES storage_objects(id) ON DELETE CASCADE,
     checksum_sha256 VARCHAR(64) NOT NULL UNIQUE,
@@ -125,7 +144,7 @@ CREATE TABLE file_checksums (
 );
 
 -- 11. Document Versions
-CREATE TABLE document_versions (
+CREATE TABLE IF NOT EXISTS document_versions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     version_number INT NOT NULL,
@@ -140,10 +159,14 @@ CREATE TABLE document_versions (
 );
 
 -- Deferred Circular Foreign Key
-ALTER TABLE documents ADD CONSTRAINT fk_documents_current_version FOREIGN KEY (current_version_id) REFERENCES document_versions(id) DEFERRABLE INITIALLY DEFERRED;
+DO $$ BEGIN
+    ALTER TABLE documents ADD CONSTRAINT fk_documents_current_version FOREIGN KEY (current_version_id) REFERENCES document_versions(id) DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- 13. Document Metadata
-CREATE TABLE document_metadata (
+CREATE TABLE IF NOT EXISTS document_metadata (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     metadata_key VARCHAR(100) NOT NULL,
@@ -152,7 +175,7 @@ CREATE TABLE document_metadata (
 );
 
 -- 14. Tags
-CREATE TABLE tags (
+CREATE TABLE IF NOT EXISTS tags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(50) NOT NULL UNIQUE,
     category VARCHAR(50) DEFAULT 'General',
@@ -160,14 +183,14 @@ CREATE TABLE tags (
 );
 
 -- 15. Document Tags
-CREATE TABLE document_tags (
+CREATE TABLE IF NOT EXISTS document_tags (
     document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
     tag_id UUID REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (document_id, tag_id)
 );
 
 -- 16. Document Locks
-CREATE TABLE document_locks (
+CREATE TABLE IF NOT EXISTS document_locks (
     document_id UUID PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
     locked_by_user_id UUID NOT NULL REFERENCES users(id),
     locked_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -175,7 +198,7 @@ CREATE TABLE document_locks (
 );
 
 -- 17. Document Comments
-CREATE TABLE document_comments (
+CREATE TABLE IF NOT EXISTS document_comments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id),
@@ -185,7 +208,7 @@ CREATE TABLE document_comments (
 );
 
 -- 18. Document Annotations
-CREATE TABLE document_annotations (
+CREATE TABLE IF NOT EXISTS document_annotations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     version_id UUID NOT NULL REFERENCES document_versions(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id),
@@ -197,7 +220,7 @@ CREATE TABLE document_annotations (
 );
 
 -- 19. Document Shares
-CREATE TABLE document_shares (
+CREATE TABLE IF NOT EXISTS document_shares (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     granted_to_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -207,7 +230,7 @@ CREATE TABLE document_shares (
 );
 
 -- 20. Share Links
-CREATE TABLE share_links (
+CREATE TABLE IF NOT EXISTS share_links (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     token_hash VARCHAR(64) NOT NULL UNIQUE,
@@ -218,7 +241,7 @@ CREATE TABLE share_links (
 );
 
 -- 21. Saved Searches
-CREATE TABLE saved_searches (
+CREATE TABLE IF NOT EXISTS saved_searches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
@@ -227,7 +250,7 @@ CREATE TABLE saved_searches (
 );
 
 -- 22. Search Alerts
-CREATE TABLE search_alerts (
+CREATE TABLE IF NOT EXISTS search_alerts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     saved_search_id UUID NOT NULL REFERENCES saved_searches(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -237,7 +260,7 @@ CREATE TABLE search_alerts (
 );
 
 -- 23. Notifications
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
@@ -248,7 +271,7 @@ CREATE TABLE notifications (
 );
 
 -- 24. Retention Policies
-CREATE TABLE retention_policies (
+CREATE TABLE IF NOT EXISTS retention_policies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
@@ -256,7 +279,7 @@ CREATE TABLE retention_policies (
 );
 
 -- 25. Retention Rules
-CREATE TABLE retention_rules (
+CREATE TABLE IF NOT EXISTS retention_rules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     policy_id UUID NOT NULL REFERENCES retention_policies(id) ON DELETE CASCADE,
     document_type_id UUID NOT NULL REFERENCES document_types(id),
@@ -266,7 +289,7 @@ CREATE TABLE retention_rules (
 );
 
 -- 26. Legal Holds
-CREATE TABLE legal_holds (
+CREATE TABLE IF NOT EXISTS legal_holds (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     case_number VARCHAR(100) NOT NULL UNIQUE,
     title VARCHAR(255) NOT NULL,
@@ -276,7 +299,7 @@ CREATE TABLE legal_holds (
 );
 
 -- 27. Legal Hold Items
-CREATE TABLE legal_hold_items (
+CREATE TABLE IF NOT EXISTS legal_hold_items (
     legal_hold_id UUID REFERENCES legal_holds(id) ON DELETE CASCADE,
     document_id UUID REFERENCES documents(id) ON DELETE RESTRICT,
     placed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -298,11 +321,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_prevent_legal_hold_hard_delete ON documents;
 CREATE TRIGGER trg_prevent_legal_hold_hard_delete
 BEFORE DELETE ON documents
 FOR EACH ROW
 EXECUTE FUNCTION prevent_legal_hold_deletion();
 
+DROP TRIGGER IF EXISTS trg_prevent_legal_hold_soft_delete ON documents;
 CREATE TRIGGER trg_prevent_legal_hold_soft_delete
 BEFORE UPDATE ON documents
 FOR EACH ROW
@@ -310,7 +335,7 @@ WHEN (NEW.is_deleted = TRUE AND OLD.is_deleted = FALSE)
 EXECUTE FUNCTION prevent_legal_hold_deletion();
 
 -- 28. Approval Workflows
-CREATE TABLE approval_workflows (
+CREATE TABLE IF NOT EXISTS approval_workflows (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
@@ -319,7 +344,7 @@ CREATE TABLE approval_workflows (
 );
 
 -- 29. Approval Steps
-CREATE TABLE approval_steps (
+CREATE TABLE IF NOT EXISTS approval_steps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workflow_id UUID NOT NULL REFERENCES approval_workflows(id) ON DELETE CASCADE,
     step_number INT NOT NULL,
@@ -329,7 +354,7 @@ CREATE TABLE approval_steps (
 );
 
 -- 30. Document Approvals
-CREATE TABLE document_approvals (
+CREATE TABLE IF NOT EXISTS document_approvals (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workflow_id UUID NOT NULL REFERENCES approval_workflows(id) ON DELETE CASCADE,
     step_id UUID NOT NULL REFERENCES approval_steps(id) ON DELETE CASCADE,
@@ -340,7 +365,7 @@ CREATE TABLE document_approvals (
 );
 
 -- 31. Document Reviews
-CREATE TABLE document_reviews (
+CREATE TABLE IF NOT EXISTS document_reviews (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     reviewer_user_id UUID NOT NULL REFERENCES users(id),
@@ -350,7 +375,7 @@ CREATE TABLE document_reviews (
 );
 
 -- 32. OCR Jobs
-CREATE TABLE ocr_jobs (
+CREATE TABLE IF NOT EXISTS ocr_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     version_id UUID NOT NULL REFERENCES document_versions(id) ON DELETE CASCADE,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
@@ -360,7 +385,7 @@ CREATE TABLE ocr_jobs (
 );
 
 -- 33. Audit Logs (Immutable)
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id VARCHAR(100) NOT NULL,
     user_email VARCHAR(255),
@@ -380,24 +405,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_audit_immutable ON audit_logs;
 CREATE TRIGGER trg_audit_immutable
 BEFORE UPDATE OR DELETE ON audit_logs
 FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_tampering();
 
--- 34. System Settings
-CREATE TABLE system_settings (
-    setting_key VARCHAR(100) PRIMARY KEY,
-    setting_value TEXT NOT NULL,
-    description TEXT,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
--- Full Text Search Index on Document Versions
-CREATE INDEX idx_doc_version_fts ON document_versions USING GIN (to_tsvector('english', coalesce(extracted_text, '') || ' ' || file_name));
+-- Full-Text Search GIN Index
+CREATE INDEX IF NOT EXISTS idx_doc_version_fts ON document_versions USING GIN (to_tsvector('english', coalesce(extracted_text, '') || ' ' || file_name));
 
 -- Core Indexes
-CREATE INDEX idx_docs_folder ON documents(folder_id);
-CREATE INDEX idx_docs_dept ON documents(owner_department_id);
-CREATE INDEX idx_docs_class ON documents(confidentiality_level);
-CREATE INDEX idx_audit_user ON audit_logs(user_id);
-CREATE INDEX idx_audit_date ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_docs_folder ON documents(folder_id);
+CREATE INDEX IF NOT EXISTS idx_docs_dept ON documents(owner_department_id);
+CREATE INDEX IF NOT EXISTS idx_docs_class ON documents(confidentiality_level);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_date ON audit_logs(created_at);

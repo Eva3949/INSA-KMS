@@ -28,7 +28,7 @@ services:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://kms-postgres:5432/${DATABASE_NAME:-kmsdb}
+      KC_DB_URL: ${KC_DB_URL:-jdbc:postgresql://${DATABASE_HOST:-kms-postgres}:${DATABASE_PORT:-5432}/${DATABASE_NAME:-kmsdb}${DATABASE_SSLMODE:-}}
       KC_DB_USERNAME: ${DATABASE_USERNAME:-kmsuser}
       KC_DB_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
       KC_HOSTNAME: ${KEYCLOAK_URL:-https://kms.enterprise.internal/auth}
@@ -36,9 +36,6 @@ services:
       KC_HTTP_ENABLED: 'true'
     ports:
       - "8080:8080"
-    depends_on:
-      kms-postgres:
-        condition: service_healthy
 
   kms-backend-1:
     build:
@@ -47,7 +44,7 @@ services:
     container_name: kms-backend-prod-1
     restart: always
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://kms-postgres:5432/${DATABASE_NAME:-kmsdb}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://${DATABASE_HOST:-kms-postgres}:${DATABASE_PORT:-5432}/${DATABASE_NAME:-kmsdb}${DATABASE_SSLMODE:-}}
       SPRING_DATASOURCE_USERNAME: ${DATABASE_USERNAME:-kmsuser}
       SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_URL:-https://kms.enterprise.internal}/realms/kms-realm
@@ -55,8 +52,6 @@ services:
       MS_GRAPH_CLIENT_SECRET: ${MS_GRAPH_CLIENT_SECRET:-placeholder}
       MS_GRAPH_TENANT_ID: ${MS_GRAPH_TENANT_ID:-common}
     depends_on:
-      kms-postgres:
-        condition: service_healthy
       kms-keycloak:
         condition: service_started
     healthcheck:
@@ -72,7 +67,7 @@ services:
     container_name: kms-backend-prod-2
     restart: always
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://kms-postgres:5432/${DATABASE_NAME:-kmsdb}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://${DATABASE_HOST:-kms-postgres}:${DATABASE_PORT:-5432}/${DATABASE_NAME:-kmsdb}${DATABASE_SSLMODE:-}}
       SPRING_DATASOURCE_USERNAME: ${DATABASE_USERNAME:-kmsuser}
       SPRING_DATASOURCE_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
       SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_URL:-https://kms.enterprise.internal}/realms/kms-realm
@@ -80,8 +75,6 @@ services:
       MS_GRAPH_CLIENT_SECRET: ${MS_GRAPH_CLIENT_SECRET:-placeholder}
       MS_GRAPH_TENANT_ID: ${MS_GRAPH_TENANT_ID:-common}
     depends_on:
-      kms-postgres:
-        condition: service_healthy
       kms-keycloak:
         condition: service_started
     healthcheck:

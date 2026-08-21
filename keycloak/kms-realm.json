@@ -1,0 +1,206 @@
+{
+  "realm": "kms-realm",
+  "displayName": "KMS Enterprise Realm",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "clientId": "kms-frontend-client",
+      "name": "KMS Frontend Client",
+      "description": "Client for KMS Web Application",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "https://*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "fullScopeAllowed": true
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "ROLE_ADMIN",
+        "description": "System Administrator"
+      },
+      {
+        "name": "SYSTEM_ADMINISTRATOR",
+        "description": "System Administrator"
+      },
+      {
+        "name": "ROLE_SYSTEM_ADMINISTRATOR",
+        "description": "System Administrator"
+      },
+      {
+        "name": "ROLE_CONTENT_OWNER",
+        "description": "Content Owner"
+      },
+      {
+        "name": "CONTENT_OWNER",
+        "description": "Content Owner"
+      },
+      {
+        "name": "ROLE_CONTRIBUTOR",
+        "description": "Contributor"
+      },
+      {
+        "name": "CONTRIBUTOR",
+        "description": "Contributor"
+      },
+      {
+        "name": "ROLE_VIEWER",
+        "description": "Viewer"
+      },
+      {
+        "name": "VIEWER",
+        "description": "Viewer"
+      },
+      {
+        "name": "ROLE_COMPLIANCE_OFFICER",
+        "description": "Compliance Officer"
+      },
+      {
+        "name": "COMPLIANCE_OFFICER",
+        "description": "Compliance Officer"
+      },
+      {
+        "name": "ROLE_IT_SECURITY",
+        "description": "IT Security Officer"
+      },
+      {
+        "name": "IT_SECURITY",
+        "description": "IT Security Officer"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "admin",
+      "email": "admin@kms.internal",
+      "firstName": "System",
+      "lastName": "Administrator",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ROLE_ADMIN",
+        "ROLE_SYSTEM_ADMINISTRATOR",
+        "SYSTEM_ADMINISTRATOR"
+      ]
+    },
+    {
+      "username": "owner",
+      "email": "owner@kms.internal",
+      "firstName": "Content",
+      "lastName": "Owner",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "owner123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ROLE_CONTENT_OWNER",
+        "CONTENT_OWNER"
+      ]
+    },
+    {
+      "username": "contributor",
+      "email": "user@kms.internal",
+      "firstName": "Jane",
+      "lastName": "Contributor",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ROLE_CONTRIBUTOR",
+        "CONTRIBUTOR"
+      ]
+    },
+    {
+      "username": "viewer",
+      "email": "viewer@kms.internal",
+      "firstName": "John",
+      "lastName": "Viewer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "viewer123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ROLE_VIEWER",
+        "VIEWER"
+      ]
+    },
+    {
+      "username": "compliance",
+      "email": "compliance@kms.internal",
+      "firstName": "Alice",
+      "lastName": "Compliance",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "compliance123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ROLE_COMPLIANCE_OFFICER",
+        "COMPLIANCE_OFFICER"
+      ]
+    },
+    {
+      "username": "security",
+      "email": "security@kms.internal",
+      "firstName": "Bob",
+      "lastName": "Security",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "security123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ROLE_IT_SECURITY",
+        "IT_SECURITY"
+      ]
+    }
+  ]
+}

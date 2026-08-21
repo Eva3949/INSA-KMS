@@ -5,15 +5,15 @@ services:
     image: postgres:15-alpine
     container_name: kms-postgres
     environment:
-      POSTGRES_DB: kmsdb
-      POSTGRES_USER: kmsuser
-      POSTGRES_PASSWORD: kmspassword
+      POSTGRES_DB: ${DATABASE_NAME:-kmsdb}
+      POSTGRES_USER: ${DATABASE_USERNAME:-kmsuser}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
     ports:
       - "5432:5432"
     volumes:
       - kms_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kmsuser -d kmsdb"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-kmsuser} -d ${DATABASE_NAME:-kmsdb}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,18 +23,15 @@ services:
     container_name: kms-keycloak
     command: start-dev --import-realm
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://kms-postgres:5432/kmsdb
-      KC_DB_USERNAME: kmsuser
-      KC_DB_PASSWORD: kmspassword
+      KC_DB_URL: ${KC_DB_URL:-jdbc:postgresql://kms-postgres:5432/kmsdb}
+      KC_DB_USERNAME: ${DATABASE_USERNAME:-kmsuser}
+      KC_DB_PASSWORD: ${DATABASE_PASSWORD:-kmspassword}
       KC_HTTP_PORT: 8080
     ports:
       - "8080:8080"
-    depends_on:
-      kms-postgres:
-        condition: service_healthy
 
 volumes:
   kms_postgres_data:

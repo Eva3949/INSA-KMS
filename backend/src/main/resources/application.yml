@@ -6,9 +6,9 @@ spring:
     name: kms-backend
 
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:kmsdb}
-    username: ${DB_USER:kmsuser}
-    password: ${DB_PASS:kmspassword}
+    url: ${SPRING_DATASOURCE_URL:${DB_URL:jdbc:postgresql://${DATABASE_HOST:${DB_HOST:dpg-da43olv40ujc73cpl09g-a.virginia-postgres.render.com}}:${DATABASE_PORT:${DB_PORT:5432}}/${DATABASE_NAME:${DB_NAME:insakms}}${DATABASE_SSLMODE:${DB_SSLMODE:?sslmode=require}}}}
+    username: ${SPRING_DATASOURCE_USERNAME:${DATABASE_USERNAME:${DB_USER:insakms_user}}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${DATABASE_PASSWORD:${DB_PASS:hLYoKjsf0GlpZbKCNfSDZ8aRGoR0oMYS}}}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
