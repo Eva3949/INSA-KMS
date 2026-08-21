@@ -114,18 +114,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchUser]);
 
   const logout = useCallback(() => {
+    // Clear all local session data — no redirect to Keycloak logout page
     sessionStorage.removeItem('kms_access_token');
     sessionStorage.removeItem('kms_refresh_token');
     setUser(null);
     // Clear the middleware auth signal cookie
     document.cookie = 'kms_auth_present=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    const keycloakIssuer =
-      process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
-    const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'kms-realm';
-    const redirectUri = encodeURIComponent(
-      `${window.location.origin}/login`
-    );
-    window.location.href = `${keycloakIssuer}/realms/${realm}/protocol/openid-connect/logout?redirect_uri=${redirectUri}`;
+    // Redirect directly to login page — Keycloak UI never opens
+    window.location.href = '/login';
   }, []);
 
 

@@ -5,6 +5,11 @@ import { Lock, Eye, EyeOff, ShieldCheck, Info, Loader2 } from 'lucide-react';
 import { Button } from '@/src/components/ui/Button';
 import { Input } from '@/src/components/ui/Input';
 
+const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
+const REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'kms-realm';
+const CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'kms-frontend-client';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
+
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -13,25 +18,89 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSsoRedirect = () => {
-    setIsLoading(true);
-    // Keycloak OIDC Authorization Code Flow Redirect
-    const keycloakIssuer = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
-    const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'kms-realm';
-    const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'kms-frontend-client';
-    const redirectUri = encodeURIComponent(`${window.location.origin}/auth/callback`);
-
-    const ssoUrl = `${keycloakIssuer}/realms/${realm}/protocol/openid-connect/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid%20profile%20email`;
-    window.location.href = ssoUrl;
-  };
-
-  const handleDirectSubmit = (e: React.FormEvent) => {
+  /**
+   * Direct Grant (ROPC) Login Flow:
+   * 1. POST credentials to Keycloak token endpoint — no browser redirect to Keycloak
+   * 2. Store the JWT access token in sessionStorage
+   * 3. Fetch user profile from Spring Boot backend
+   * 4. Redirect to /admin (admins) or /library (others)
+   */
+  const handleDirectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsLoading(true);
 
-    // Route authentication through official Keycloak OIDC Authorization Code Flow
-    handleSsoRedirect();
+    try {
+      // Step 1: Get access token directly from Keycloak (runs in background, no redirect)
+      const tokenRes = await fetch(
+        `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'password',
+            client_id: CLIENT_ID,
+            username: username.trim(),
+            password,
+            scope: 'openid profile email',
+          }),
+        }
+      );
+
+      if (!tokenRes.ok) {
+        const errData = await tokenRes.json().catch(() => ({}));
+        if (errData?.error === 'invalid_grant') {
+          throw new Error('Invalid username or password. Please try again.');
+        }
+        throw new Error(errData?.error_description || 'Authentication failed. Please try again.');
+      }
+
+      const tokenData = await tokenRes.json();
+      const accessToken: string = tokenData.access_token;
+
+      // Step 2: Store token — user stays on localhost:3000 entirely
+      sessionStorage.setItem('kms_access_token', accessToken);
+      if (tokenData.refresh_token) {
+        sessionStorage.setItem('kms_refresh_token', tokenData.refresh_token);
+      }
+      document.cookie = 'kms_auth_present=true; path=/; samesite=lax';
+
+      // Step 3: Fetch user role from backend for role-based redirect
+      let redirectPath = '/library';
+      try {
+        const profileRes = await fetch(`${API_BASE_URL}/users/me`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+          const roles: string[] = profile.roles || profile.realmRoles || [];
+          if (
+            roles.includes('ROLE_ADMIN') ||
+            roles.includes('ROLE_SYSTEM_ADMINISTRATOR') ||
+            roles.includes('SYSTEM_ADMINISTRATOR')
+          ) {
+            redirectPath = '/admin';
+          }
+        }
+      } catch {
+        // Backend unavailable — use default library redirect
+      }
+
+      // Step 4: Navigate to dashboard directly — Keycloak page never opens
+      window.location.href = redirectPath;
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Authentication failed. Please try again.';
+      setErrorMessage(message);
+      setIsLoading(false);
+    }
+  };
+
+  const handleSsoRedirect = () => {
+    setIsLoading(true);
+    const redirectUri = encodeURIComponent(`${window.location.origin}/auth/callback`);
+    const ssoUrl = `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/auth?client_id=${CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=openid%20profile%20email`;
+    window.location.href = ssoUrl;
   };
 
   return (
@@ -47,12 +116,11 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Main Login Card Center Container */}
+      {/* Main Login Card */}
       <div className="flex-1 flex items-center justify-center p-4 my-6">
         <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          {/* Header Branding with Official INSA Logo */}
+          {/* Header Branding */}
           <div className="p-8 bg-white border-b border-slate-100 text-center">
-            {/* Official INSA Logo Asset */}
             <img
               src="/images/insalogo.png"
               alt="INSA"
@@ -70,7 +138,7 @@ export default function LoginPage() {
 
           {/* Form Content */}
           <div className="p-6 space-y-5">
-            {/* Error Message Box */}
+            {/* Error Message */}
             {errorMessage && (
               <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg flex items-start gap-2">
                 <Info className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
@@ -78,7 +146,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Form for Direct Credentials */}
+            {/* Credentials Form */}
             <form onSubmit={handleDirectSubmit} className="space-y-4">
               <Input
                 label="Username / Email"
@@ -90,9 +158,7 @@ export default function LoginPage() {
               />
 
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-slate-700">
-                  Password
-                </label>
+                <label className="block text-xs font-semibold text-slate-700">Password</label>
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -113,7 +179,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {/* Remember Me Option */}
+              {/* Remember Me */}
               <div className="flex items-center justify-between pt-1">
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600 font-medium">
                   <input
@@ -126,7 +192,7 @@ export default function LoginPage() {
                 </label>
               </div>
 
-              {/* Primary SIGN IN Button */}
+              {/* Sign In Button */}
               <Button
                 type="submit"
                 variant="primary"
@@ -135,7 +201,7 @@ export default function LoginPage() {
                 disabled={isLoading}
                 icon={isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : undefined}
               >
-                SIGN IN
+                {isLoading ? 'Signing in...' : 'SIGN IN'}
               </Button>
             </form>
 
@@ -146,7 +212,7 @@ export default function LoginPage() {
               <div className="flex-1 h-px bg-slate-200" />
             </div>
 
-            {/* Secondary INSA SSO Button */}
+            {/* SSO Button (opens Keycloak login page) */}
             <div>
               <Button
                 type="button"
@@ -155,7 +221,13 @@ export default function LoginPage() {
                 className="w-full font-semibold text-xs justify-center border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-blue-300 hover:text-blue-900 py-3 rounded-lg transition-colors bg-white"
                 onClick={handleSsoRedirect}
                 disabled={isLoading}
-                icon={isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4 text-blue-700" />}
+                icon={
+                  isLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Lock className="w-4 h-4 text-blue-700" />
+                  )
+                }
               >
                 Sign in with INSA SSO
               </Button>
@@ -170,7 +242,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Official Footer */}
+      {/* Footer */}
       <footer className="p-4 text-center text-xs text-slate-500 border-t border-slate-200 bg-white">
         <div className="font-semibold text-slate-700">INSA Knowledge Management System</div>
         <div className="text-[11px] text-slate-400 mt-0.5">&copy; 2026 INSA. All Rights Reserved.</div>
