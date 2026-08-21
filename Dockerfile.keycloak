@@ -1,19 +1,14 @@
-FROM quay.io/keycloak/keycloak:24.0.1 AS builder
-
-ENV KC_HEALTH_ENABLED=true
-ENV KC_METRICS_ENABLED=true
-ENV KC_DB=postgres
-
-WORKDIR /opt/keycloak
-RUN /opt/keycloak/bin/kc.sh build
-
 FROM quay.io/keycloak/keycloak:24.0.1
-COPY --from=builder /opt/keycloak/ /opt/keycloak/
+
+# Copy pre-configured realm import file for automatic initialization
 COPY keycloak/kms-realm.json /opt/keycloak/data/import/kms-realm.json
 
+# Disable strict hostname resolution and enable HTTP/proxy headers for Render
+ENV KC_DB=postgres
 ENV KC_HOSTNAME_STRICT=false
 ENV KC_HOSTNAME_STRICT_BACKCHANNEL=false
 ENV KC_HTTP_ENABLED=true
 ENV KC_PROXY_HEADERS=xforwarded
 
-ENTRYPOINT ["/opt/keycloak/bin/kc.sh", "start", "--import-realm", "--optimized", "--hostname-strict=false", "--http-enabled=true", "--proxy-headers=xforwarded"]
+# Entrypoint using start-dev --import-realm to listen on 0.0.0.0:8080 and bypass hostname strictness
+ENTRYPOINT ["/opt/keycloak/bin/kc.sh", "start-dev", "--import-realm"]
