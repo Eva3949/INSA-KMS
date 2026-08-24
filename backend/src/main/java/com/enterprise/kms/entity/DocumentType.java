@@ -1,11 +1,13 @@
 package com.enterprise.kms.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "document_types")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class DocumentType {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

@@ -17,6 +17,19 @@ public class RetentionPolicy {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "document_type_id")
+    private DocumentType documentType;
+
+    @Column(name = "retention_days")
+    private Integer retentionDays;
+
+    @Column(name = "disposition_action", nullable = false, length = 20)
+    private String dispositionAction = "ARCHIVE";
+
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = true;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
@@ -28,6 +41,18 @@ public class RetentionPolicy {
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+
+    public DocumentType getDocumentType() { return documentType; }
+    public void setDocumentType(DocumentType documentType) { this.documentType = documentType; }
+
+    public Integer getRetentionDays() { return retentionDays; }
+    public void setRetentionDays(Integer retentionDays) { this.retentionDays = retentionDays; }
+
+    public String getDispositionAction() { return dispositionAction; }
+    public void setDispositionAction(String dispositionAction) { this.dispositionAction = dispositionAction; }
+
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }

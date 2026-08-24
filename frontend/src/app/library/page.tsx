@@ -32,12 +32,43 @@ interface ApiDocument {
   title?: string;
   fileName?: string;
   department?: string;
+  ownerDepartment?: { name?: string; code?: string };
   owner?: string;
-  currentVersion?: string;
+  confidentialityLevel?: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
   securityClassification?: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+  currentVersion?: string | {
+    versionNumber?: number;
+    fileName?: string;
+    storageObject?: {
+      fileSizeBytes?: number;
+      checksumSha256?: string;
+    };
+  };
   fileSizeBytes?: number;
   updatedAt?: string;
   isCheckedOut?: boolean;
+}
+
+function getDocDepartment(doc: ApiDocument): string {
+  return doc.department || doc.ownerDepartment?.name || doc.ownerDepartment?.code || 'General';
+}
+
+function getDocClassification(doc: ApiDocument): 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED' {
+  return (doc.securityClassification || doc.confidentialityLevel || 'INTERNAL') as any;
+}
+
+function getDocVersionString(doc: ApiDocument): string {
+  if (!doc.currentVersion) return 'v1';
+  if (typeof doc.currentVersion === 'string') return doc.currentVersion;
+  return `v${doc.currentVersion.versionNumber || 1}`;
+}
+
+function getDocSizeBytes(doc: ApiDocument): number | undefined {
+  if (typeof doc.fileSizeBytes === 'number') return doc.fileSizeBytes;
+  if (typeof doc.currentVersion === 'object' && doc.currentVersion?.storageObject?.fileSizeBytes) {
+    return doc.currentVersion.storageObject.fileSizeBytes;
+  }
+  return undefined;
 }
 
 function formatFileSize(bytes?: number): string {
@@ -102,7 +133,8 @@ export default function DocumentLibraryPage() {
   };
 
   const filteredDocs = documents.filter((doc) => {
-    if (filterClass !== 'ALL' && doc.securityClassification !== filterClass) return false;
+    const classification = getDocClassification(doc);
+    if (filterClass !== 'ALL' && classification !== filterClass) return false;
     return true;
   });
 
@@ -139,26 +171,26 @@ export default function DocumentLibraryPage() {
     },
     {
       header: 'Department',
-      accessor: (doc: ApiDocument) => <span className="text-xs text-kms-slate-600">{doc.department || '?'}</span>,
+      accessor: (doc: ApiDocument) => <span className="text-xs text-kms-slate-600">{getDocDepartment(doc)}</span>,
     },
     {
       header: 'Version',
       accessor: (doc: ApiDocument) => (
         <Link href={`/versions/${doc.id}`} className="font-mono text-xs text-blue-700 hover:underline font-bold">
-          {doc.currentVersion || 'v1'}
+          {getDocVersionString(doc)}
         </Link>
       ),
     },
     {
       header: 'Classification',
-      accessor: (doc: ApiDocument) =>
-        doc.securityClassification ? (
-          <Badge label={doc.securityClassification} classification={doc.securityClassification} />
-        ) : <span className="text-xs text-kms-slate-400">?</span>,
+      accessor: (doc: ApiDocument) => {
+        const cls = getDocClassification(doc);
+        return <Badge label={cls} classification={cls} />;
+      },
     },
     {
       header: 'Size',
-      accessor: (doc: ApiDocument) => <span className="text-xs text-kms-slate-500">{formatFileSize(doc.fileSizeBytes)}</span>,
+      accessor: (doc: ApiDocument) => <span className="text-xs text-kms-slate-500">{formatFileSize(getDocSizeBytes(doc))}</span>,
     },
     {
       header: 'Actions',
@@ -311,25 +343,21 @@ export default function DocumentLibraryPage() {
 
                 <div>
                   <div className="text-xs font-semibold text-kms-slate-900 mb-1">{selectedDoc.title || selectedDoc.fileName}</div>
-                  {selectedDoc.securityClassification && (
-                    <Badge label={selectedDoc.securityClassification} classification={selectedDoc.securityClassification} />
-                  )}
+                  <Badge label={getDocClassification(selectedDoc)} classification={getDocClassification(selectedDoc)} />
                 </div>
 
                 <div className="space-y-2 text-xs divide-y divide-kms-slate-100">
-                  {selectedDoc.department && (
-                    <div className="pt-2 flex justify-between text-kms-slate-600">
-                      <span>Department:</span>
-                      <span className="font-medium text-kms-slate-900">{selectedDoc.department}</span>
-                    </div>
-                  )}
+                  <div className="pt-2 flex justify-between text-kms-slate-600">
+                    <span>Department:</span>
+                    <span className="font-medium text-kms-slate-900">{getDocDepartment(selectedDoc)}</span>
+                  </div>
                   <div className="pt-2 flex justify-between text-kms-slate-600">
                     <span>Version:</span>
-                    <span className="font-mono font-bold text-blue-800">{selectedDoc.currentVersion || 'v1'}</span>
+                    <span className="font-mono font-bold text-blue-800">{getDocVersionString(selectedDoc)}</span>
                   </div>
                   <div className="pt-2 flex justify-between text-kms-slate-600">
                     <span>File Size:</span>
-                    <span className="font-medium text-kms-slate-900">{formatFileSize(selectedDoc.fileSizeBytes)}</span>
+                    <span className="font-medium text-kms-slate-900">{formatFileSize(getDocSizeBytes(selectedDoc))}</span>
                   </div>
                 </div>
 

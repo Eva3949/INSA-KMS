@@ -3,81 +3,171 @@
 import React from 'react';
 import { AppShell } from '@/src/components/layout/AppShell';
 import { Breadcrumb } from '@/src/components/ui/Breadcrumb';
-import { Card } from '@/src/components/ui/Card';
+import { Button } from '@/src/components/ui/Button';
 import { Table } from '@/src/components/ui/Table';
 import { Badge } from '@/src/components/ui/Badge';
-import { ShieldAlert, AlertTriangle, Lock } from 'lucide-react';
+import { Pagination } from '@/src/components/ui/Pagination';
+import { LoadingState } from '@/src/components/ui/States';
+import { Alert } from '@/src/components/ui/Alert';
+import { kmsApi } from '@/src/lib/api';
+import { ShieldAlert, RefreshCw, Download } from 'lucide-react';
+
+interface AuditEvent {
+  id: string;
+  userId: string;
+  userEmail?: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  ipAddress?: string | null;
+  createdAt: string;
+}
+
+const HIGH_RISK = ['DELETED', 'PURGE', 'ROLE_CHANGED', 'PERMISSION', 'LEGAL_HOLD', 'SETTINGS_UPDATED', 'DEACTIVATED'];
+const MEDIUM_RISK = ['CREATED', 'UPDATED', 'EXPORTED', 'RELEASED', 'RETENTION'];
+
+function severityOf(action: string): { label: string; variant: 'red' | 'amber' | 'slate' } {
+  if (HIGH_RISK.some((k) => action.includes(k))) return { label: 'HIGH', variant: 'red' };
+  if (MEDIUM_RISK.some((k) => action.includes(k))) return { label: 'MEDIUM', variant: 'amber' };
+  return { label: 'INFO', variant: 'slate' };
+}
 
 export default function AdminSecurityPage() {
-  const mockAlerts = [
-    {
-      id: 'sec-1',
-      type: 'MULTIPLE_AUTH_FAILURES',
-      severity: 'HIGH',
-      user: 'unknown_scanner@198.51.100.42',
-      details: '15 failed password attempts on Keycloak Realm in 60 seconds.',
-      timestamp: '2026-08-19 04:12:00',
-    },
-    {
-      id: 'sec-2',
-      type: 'UNAUTHORIZED_CONFIDENTIAL_DOWNLOAD_ATTEMPT',
-      severity: 'CRITICAL',
-      user: 'guest_user@enterprise.internal',
-      details: 'Attempted REST API access to RESTRICTED file without ROLE_IT_SECURITY.',
-      timestamp: '2026-08-18 22:45:11',
-    },
-  ];
+  const [events, setEvents] = React.useState<AuditEvent[]>([]);
+  const [page, setPage] = React.useState(0);
+  const [totalPages, setTotalPages] = React.useState(1);
+  const [totalElements, setTotalElements] = React.useState(0);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const load = React.useCallback((targetPage: number) => {
+    setIsLoading(true);
+    setError(null);
+    kmsApi.admin
+      .getSecurityEvents(targetPage, 25)
+      .then((data: any) => {
+        setEvents((data?.content ?? []) as AuditEvent[]);
+        setTotalPages(data?.totalPages ?? 1);
+        setTotalElements(data?.totalElements ?? 0);
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Failed to load security events'))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  React.useEffect(() => {
+    load(page);
+  }, [load, page]);
+
+  const handleExport = () => {
+    const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+    fetch(kmsApi.governance.exportAuditLogsUrl, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Export failed [${res.status}]`);
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'kms-audit-logs.csv';
+        link.click();
+        window.URL.revokeObjectURL(url);
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Export failed'));
+  };
 
   const columns = [
     {
-      header: 'Alert Type',
-      accessor: (alert: typeof mockAlerts[0]) => (
-        <span className="font-mono text-xs font-bold text-red-900 flex items-center gap-1.5">
+      header: 'Event Action',
+      accessor: (e: AuditEvent) => (
+        <span className="font-mono text-xs font-bold text-kms-slate-900 flex items-center gap-1.5">
           <ShieldAlert className="w-4 h-4 text-red-600 shrink-0" />
-          {alert.type}
+          {e.action}
         </span>
       ),
     },
     {
       header: 'Severity',
-      accessor: (alert: typeof mockAlerts[0]) => (
-        <Badge label={alert.severity} variant="red" />
+      accessor: (e: AuditEvent) => {
+        const sev = severityOf(e.action);
+        return <Badge label={sev.label} variant={sev.variant} />;
+      },
+    },
+    {
+      header: 'Actor',
+      accessor: (e: AuditEvent) => (
+        <span className="text-xs font-mono text-kms-slate-800">{e.userEmail || e.userId}</span>
       ),
     },
     {
-      header: 'Target User / Source',
-      accessor: (alert: typeof mockAlerts[0]) => <span className="text-xs font-mono text-kms-slate-800">{alert.user}</span>,
+      header: 'Resource',
+      accessor: (e: AuditEvent) => (
+        <span className="text-xs text-kms-slate-700">
+          {e.resourceType}
+          <span className="text-kms-slate-400 font-mono ml-1 text-[11px]">{e.resourceId?.slice(0, 8)}</span>
+        </span>
+      ),
     },
     {
-      header: 'Incident Details',
-      accessor: (alert: typeof mockAlerts[0]) => <span className="text-xs text-kms-slate-700">{alert.details}</span>,
+      header: 'Source IP',
+      accessor: (e: AuditEvent) => <span className="text-xs font-mono text-kms-slate-600">{e.ipAddress || '-'}</span>,
     },
     {
       header: 'Timestamp',
-      accessor: (alert: typeof mockAlerts[0]) => <span className="text-xs text-kms-slate-500 font-mono">{alert.timestamp}</span>,
+      accessor: (e: AuditEvent) => (
+        <span className="text-xs text-kms-slate-500 font-mono">
+          {e.createdAt ? new Date(e.createdAt).toLocaleString() : '-'}
+        </span>
+      ),
     },
   ];
 
   return (
     <AppShell requiredRole="ROLE_IT_SECURITY">
       <div className="space-y-5">
-        <div className="border-b border-kms-slate-200 pb-3">
-          <Breadcrumb items={[{ label: 'Administration', href: '/admin' }, { label: 'Security Alerts' }]} />
-          <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-red-600" />
-            Security Incident Alerts & Anomaly Monitoring
-          </h1>
+        <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
+          <div>
+            <Breadcrumb items={[{ label: 'Administration', href: '/admin' }, { label: 'Security Alerts' }]} />
+            <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-red-600" />
+              Security Incident Alerts & Anomaly Monitoring
+            </h1>
+            <p className="text-[11px] text-kms-slate-500 mt-1">
+              Immutable audit trail (FR-22) — {totalElements.toLocaleString()} recorded events
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" icon={<Download className="w-4 h-4" />} onClick={handleExport}>
+              Export CSV (SIEM)
+            </Button>
+            <Button variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />} onClick={() => load(page)}>
+              Refresh
+            </Button>
+          </div>
         </div>
 
-        <Table
-          columns={columns}
-          data={mockAlerts}
-          keyExtractor={(item) => item.id}
-          emptyText="No active security alerts."
-        />
+        {error && <Alert type="error">{error}</Alert>}
+
+        {isLoading ? (
+          <LoadingState message="Loading security events..." />
+        ) : (
+          <>
+            <Table columns={columns} data={events} keyExtractor={(item) => item.id} emptyText="No security events recorded." />
+            {totalPages > 1 && (
+              <Pagination
+                currentPage={page + 1}
+                totalPages={totalPages}
+                totalItems={totalElements}
+                pageSize={25}
+                onPageChange={(p) => setPage(p - 1)}
+              />
+            )}
+          </>
+        )}
       </div>
     </AppShell>
   );
 }
-
-

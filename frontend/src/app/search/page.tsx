@@ -19,7 +19,8 @@ interface SearchResult {
   snippet?: string;
   department?: string;
   owner?: string;
-  currentVersion?: string;
+  currentVersion?: string | { versionNumber?: number };
+  confidentialityLevel?: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
   securityClassification?: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
   matchedField?: string;
   relevanceScore?: string | number;
@@ -255,7 +256,16 @@ export default function AdvancedSearchPage() {
                     <div className="flex flex-wrap items-center justify-between text-[11px] text-kms-slate-500 pt-1 border-t border-kms-slate-100">
                       <div className="flex items-center gap-3">
                         {result.department && <span>Department: <strong>{result.department}</strong></span>}
-                        {result.currentVersion && <span>Version: <strong className="font-mono">{result.currentVersion}</strong></span>}
+                        {result.currentVersion && (
+                          <span>
+                            Version:{' '}
+                            <strong className="font-mono">
+                              {typeof result.currentVersion === 'string'
+                                ? result.currentVersion
+                                : `v${result.currentVersion.versionNumber ?? 1}`}
+                            </strong>
+                          </span>
+                        )}
                       </div>
                       {result.matchedField && (
                         <div className="flex items-center gap-2 text-kms-slate-400">

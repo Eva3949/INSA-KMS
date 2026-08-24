@@ -61,6 +61,7 @@ export default function AdminUsersPage() {
   const [formUsername, setFormUsername] = useState('');
   const [formEmail, setFormEmail] = useState('');
   const [formRole, setFormRole] = useState('ROLE_VIEWER');
+  const [formTempPassword, setFormTempPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
@@ -122,15 +123,17 @@ export default function AdminUsersPage() {
           username: formUsername,
           email: formEmail,
           roleName: formRole,
+          temporaryPassword: formTempPassword || undefined,
         }),
       });
 
       if (res.ok) {
-        showNotification('success', `User '${formUsername}' created successfully`);
+        showNotification('success', `User '${formUsername}' created in Keycloak and KMS`);
         setIsCreateOpen(false);
         setFormUsername('');
         setFormEmail('');
         setFormRole('ROLE_VIEWER');
+        setFormTempPassword('');
         fetchUsers();
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -453,6 +456,21 @@ export default function AdminUsersPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-kms-slate-700 mb-1">Temporary Password</label>
+            <input
+              type="text"
+              placeholder="min. 8 characters — user must change at first login"
+              value={formTempPassword}
+              onChange={(e) => setFormTempPassword(e.target.value)}
+              className="w-full px-3 py-1.5 text-xs border border-kms-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+            />
+            <p className="text-[11px] text-kms-slate-500 mt-1">
+              The account is provisioned in the Keycloak realm so the user can actually sign in (FR-18). Leave blank to
+              create the account without credentials and set the password later.
+            </p>
           </div>
 
           <div className="flex justify-end gap-2 pt-3 border-t border-kms-slate-200">

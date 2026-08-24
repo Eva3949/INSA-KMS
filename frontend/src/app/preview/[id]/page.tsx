@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '@/src/components/layout/AppShell';
 import { Breadcrumb } from '@/src/components/ui/Breadcrumb';
 import { Button } from '@/src/components/ui/Button';
@@ -8,128 +8,198 @@ import { Badge } from '@/src/components/ui/Badge';
 import { Tabs } from '@/src/components/ui/Tabs';
 import { Alert } from '@/src/components/ui/Alert';
 import { Card } from '@/src/components/ui/Card';
-import { 
-  Download, 
-  Share2, 
-  Lock, 
-  Unlock, 
-  History, 
-  MessageSquare, 
-  FileText, 
-  ZoomIn, 
-  ZoomOut, 
-  Printer, 
-  ShieldCheck, 
-  Tag, 
+import { LoadingState, ErrorState } from '@/src/components/ui/States';
+import {
+  Download,
+  Share2,
+  History,
+  MessageSquare,
+  FileText,
+  ShieldCheck,
+  Tag,
   FileCheck,
   Calendar,
   User,
-  Building
+  Building,
+  ExternalLink,
 } from 'lucide-react';
 import Link from 'next/link';
 import { kmsApi } from '@/src/lib/api';
 
+interface ApiDocument {
+  id: string;
+  title?: string;
+  fileName?: string;
+  mimeType?: string;
+  department?: string;
+  owner?: string;
+  ownerEmail?: string;
+  documentType?: string;
+  confidentialityLevel?: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+  status?: string;
+  fileSizeBytes?: number;
+  createdAt?: string;
+  updatedAt?: string;
+  folderName?: string | null;
+  legalHold?: boolean;
+  tags?: string[];
+  currentVersion?: {
+    versionNumber?: number;
+    fileName?: string;
+    createdAt?: string;
+    storageObject?: { fileSizeBytes?: number; checksumSha256?: string };
+  };
+}
+
+interface VersionRow {
+  id: string;
+  versionNumber: number;
+  fileName?: string;
+  changeSummary?: string;
+  createdAt?: string;
+  createdBy?: string;
+  fileSizeBytes?: number;
+}
+
+function formatSize(bytes?: number): string {
+  if (!bytes) return '—';
+  const mb = bytes / (1024 * 1024);
+  if (mb < 1) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${mb.toFixed(1)} MB`;
+}
+
+function formatDate(iso?: string): string {
+  return iso ? new Date(iso).toLocaleString() : '—';
+}
+
+const INLINE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml', 'text/plain'];
+
 export default function DocumentPreviewWorkspacePage({ params }: { params: { id: string } }) {
   const docId = params.id;
   const [activeTab, setActiveTab] = useState('metadata');
-  const [isLocked, setIsLocked] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(100);
-  const [docStatus, setDocStatus] = useState<'DRAFT' | 'UNDER_REVIEW' | 'PUBLISHED' | 'ARCHIVED'>('PUBLISHED');
+  const [doc, setDoc] = useState<ApiDocument | null>(null);
+  const [versions, setVersions] = useState<VersionRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const mockDoc = {
-    id: docId,
-    title: 'KMS_Security_Architecture_v2.pdf',
-    department: 'IT Security',
-    owner: 'Sarah Jenkins',
-    version: 'v2.4',
-    classification: 'RESTRICTED' as const,
-    documentType: 'Policy / Specification',
-    fileSize: '4.2 MB',
-    createdDate: '2026-07-01',
-    modifiedDate: '2026-08-18',
-    modifiedBy: 'Sarah Jenkins',
-    retentionCategory: '7 Years (Confidential Security Records)',
-    reviewDate: '2027-08-18',
-    tags: ['Security', 'OAuth2', 'Architecture', 'Keycloak'],
-    isLegalHold: true,
-  };
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setError(null);
+    Promise.all([kmsApi.documents.getById(docId), kmsApi.documents.getVersions(docId).catch(() => [])])
+      .then(([docData, versionData]) => {
+        setDoc(docData as ApiDocument);
+        setVersions((versionData ?? []) as VersionRow[]);
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load document'))
+      .finally(() => setIsLoading(false));
+  }, [docId]);
 
-  const handleToggleLock = () => {
-    if (isLocked) {
-      setIsLocked(false);
-      setStatusMessage('Document lock released. Other contributors can now check out and edit.');
-    } else {
-      setIsLocked(true);
-      setStatusMessage('Document checked out exclusively by you. Exclusive editing lock active.');
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Stream the binary with the bearer token, then render it from a blob URL
+  useEffect(() => {
+    if (!doc) return;
+    const mime = doc.mimeType || '';
+    if (!INLINE_TYPES.includes(mime)) return;
+
+    let revoked: string | null = null;
+    let cancelled = false;
+    kmsApi.documents
+      .downloadBlob(docId, 'inline')
+      .then((blob) => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        revoked = url;
+        setObjectUrl(url);
+      })
+      .catch((err: unknown) => setPreviewError(err instanceof Error ? err.message : 'Preview unavailable'));
+
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [doc, docId]);
+
+  const handleDownload = async () => {
+    try {
+      const blob = await kmsApi.documents.downloadBlob(docId, 'attachment');
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = doc?.fileName || doc?.title || 'document';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : 'Download failed');
     }
-  };
-
-  const handleAdvanceStatus = (newStatus: 'DRAFT' | 'UNDER_REVIEW' | 'PUBLISHED' | 'ARCHIVED') => {
-    setDocStatus(newStatus);
-    setStatusMessage(`Workflow status updated to ${newStatus}. Governance audit logged.`);
   };
 
   const handleOpenInDesktopApp = async () => {
     try {
-      setStatusMessage('Requesting native desktop application protocol handler...');
       const res = await kmsApi.documents.desktopOpen(docId);
       setStatusMessage(`Desktop launcher generated for ${res.fileName} via ${res.supportedApp}.`);
       if (typeof window !== 'undefined' && res.desktopUri) {
         window.location.href = res.desktopUri;
       }
-    } catch {
-      setStatusMessage('Generated desktop URI protocol handler: ms-word:ofe|u|' + window.location.origin + '/api/v1/documents/' + docId + '/download');
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : 'Desktop handoff unavailable');
     }
   };
+
+  if (isLoading) {
+    return (
+      <AppShell>
+        <LoadingState message="Loading document..." />
+      </AppShell>
+    );
+  }
+
+  if (error || !doc) {
+    return (
+      <AppShell>
+        <ErrorState title="Could not open document" message={error || 'Document not found'} onRetry={load} />
+      </AppShell>
+    );
+  }
+
+  const classification = (doc.confidentialityLevel || 'INTERNAL') as 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+  const title = doc.title || doc.fileName || doc.id;
+  const mime = doc.mimeType || '';
+  const canInline = INLINE_TYPES.includes(mime);
 
   return (
     <AppShell>
       <div className="space-y-4">
-        {/* Workspace Toolbar */}
         <div className="flex flex-wrap items-center justify-between border-b border-kms-slate-200 pb-3 gap-3">
-          <div>
-            <Breadcrumb
-              items={[
-                { label: 'Document Library', href: '/library' },
-                { label: mockDoc.title },
-              ]}
-            />
+          <div className="min-w-0">
+            <Breadcrumb items={[{ label: 'Document Library', href: '/library' }, { label: title }]} />
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
-              <FileText className="w-5 h-5 text-blue-700" />
-              {mockDoc.title}
+              <FileText className="w-5 h-5 text-blue-700 shrink-0" />
+              <span className="truncate">{title}</span>
             </h1>
+            <p className="text-[11px] text-kms-slate-500 mt-1 font-mono">{doc.id}</p>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              icon={<FileCheck className="w-4 h-4 text-blue-700" />}
-              onClick={handleOpenInDesktopApp}
-            >
-              Open in Desktop App (FR-24)
+            <Button variant="outline" size="sm" icon={<FileCheck className="w-4 h-4 text-blue-700" />} onClick={handleOpenInDesktopApp}>
+              Open in Desktop App
             </Button>
-            <Button
-              variant={isLocked ? 'secondary' : 'outline'}
-              size="sm"
-              icon={isLocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-              onClick={handleToggleLock}
-            >
-              {isLocked ? 'Check-In (Release Lock)' : 'Check-Out (Lock)'}
-            </Button>
-            <Link href={`/share/${mockDoc.id}`}>
+            <Link href={`/share/${doc.id}`}>
               <Button variant="outline" size="sm" icon={<Share2 className="w-4 h-4" />}>
                 Share Link
               </Button>
             </Link>
-            <Button variant="primary" size="sm" icon={<Download className="w-4 h-4" />}>
-              Download Binary
+            <Button variant="primary" size="sm" icon={<Download className="w-4 h-4" />} onClick={handleDownload}>
+              Download
             </Button>
           </div>
         </div>
 
-        {/* Status Toast */}
         {statusMessage && (
           <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 text-xs rounded flex items-center justify-between">
             <div className="flex items-center gap-2 font-medium">
@@ -142,91 +212,64 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
           </div>
         )}
 
-        {/* Exclusive Check-Out Lock Warning */}
-        {isLocked && (
-          <Alert type="warning" title="EXCLUSIVE EDITING LOCK ACTIVE">
-            This document is currently checked out by you. Concurrent edits by other users are blocked until check-in.
+        {doc.legalHold && (
+          <Alert type="legal-hold" title="LITIGATION LEGAL HOLD ACTIVE">
+            This document is frozen under an active legal hold. Retention disposition and deletion are suspended and
+            blocked by database triggers until the hold is released.
           </Alert>
         )}
 
-
-        {/* Legal Hold Warning Banner */}
-        {mockDoc.isLegalHold && (
-          <Alert type="legal-hold" title="LITIGATION LEGAL HOLD ACTIVE (Case #LH-2026-09)">
-            This document is currently frozen under an active litigation hold. Automatic deletion and disposition policies are suspended. Soft deletion and purge operations are prohibited by database security triggers.
-          </Alert>
-        )}
-
-
-        {/* Split View: 70% Preview Canvas / 30% Metadata & Collaboration Drawer */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Main Document Render Canvas */}
+          {/* Viewer */}
           <div className="lg:col-span-8 space-y-3">
-            {/* Viewer Controls */}
             <div className="bg-kms-slate-900 text-kms-slate-300 p-2 rounded flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <span>Page 1 of 18</span>
-                <span className="text-kms-slate-600">|</span>
-                <button
-                  onClick={() => setZoomLevel(Math.max(50, zoomLevel - 10))}
-                  className="hover:text-white"
-                >
-                  <ZoomOut className="w-3.5 h-3.5" />
-                </button>
-                <span className="font-mono">{zoomLevel}%</span>
-                <button
-                  onClick={() => setZoomLevel(Math.min(200, zoomLevel + 10))}
-                  className="hover:text-white"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
+              <span className="font-mono truncate">{doc.fileName || '—'}</span>
               <div className="flex items-center gap-3">
-                <Printer className="w-4 h-4 hover:text-white cursor-pointer" />
-                <Badge label={mockDoc.classification} classification={mockDoc.classification} />
+                <span className="font-mono text-kms-slate-400">{formatSize(doc.fileSizeBytes)}</span>
+                <Badge label={classification} classification={classification} />
               </div>
             </div>
 
-            {/* Document Render Area (PDF.js Canvas View Simulator) */}
-            <div className="kms-card bg-kms-slate-200 border border-kms-slate-400 min-h-[600px] flex items-center justify-center p-8 overflow-auto shadow-inner">
-              <div
-                className="bg-white shadow-2xl p-10 min-h-[750px] w-full max-w-2xl border border-kms-slate-300 space-y-6 text-kms-slate-900 font-sans"
-                style={{ transform: `scale(${zoomLevel / 100})`, transformOrigin: 'top center' }}
-              >
-                <div className="border-b border-kms-slate-300 pb-4 flex justify-between items-center">
-                  <div>
-                    <h2 className="text-lg font-bold tracking-tight">KMS Security Architecture Specification</h2>
-                    <p className="text-xs text-kms-slate-500">Enterprise Keycloak OIDC & Spring Security Model</p>
-                  </div>
-                  <Badge label={mockDoc.classification} classification={mockDoc.classification} />
+            <div className="kms-card bg-kms-slate-200 border border-kms-slate-400 min-h-[600px] flex items-center justify-center overflow-hidden shadow-inner">
+              {previewError ? (
+                <div className="text-center p-8 space-y-3">
+                  <FileText className="w-10 h-10 text-kms-slate-400 mx-auto" />
+                  <p className="text-xs text-kms-slate-700 font-semibold">{previewError}</p>
+                  <Button variant="outline" size="sm" icon={<Download className="w-4 h-4" />} onClick={handleDownload}>
+                    Download instead
+                  </Button>
                 </div>
-
-                <div className="text-xs space-y-3 leading-relaxed text-kms-slate-800">
-                  <p className="font-semibold text-kms-slate-900">1. Executive Overview</p>
-                  <p>
-                    This document defines the production security architecture for the internal Knowledge Management System (KMS). Authentication is delegated to Keycloak via OAuth2 / OpenID Connect (OIDC) Authorization Code Flow with PKCE.
+              ) : canInline && objectUrl ? (
+                mime.startsWith('image/') ? (
+                  <img src={objectUrl} alt={title} className="max-h-[750px] max-w-full object-contain bg-white" />
+                ) : (
+                  <iframe src={objectUrl} title={title} className="w-full h-[750px] bg-white" />
+                )
+              ) : canInline ? (
+                <LoadingState message="Rendering preview..." />
+              ) : (
+                <div className="text-center p-8 space-y-3">
+                  <FileText className="w-10 h-10 text-kms-slate-400 mx-auto" />
+                  <p className="text-xs text-kms-slate-700 font-semibold">
+                    No in-browser preview for {mime || 'this file type'}
                   </p>
-                  <p className="font-semibold text-kms-slate-900">2. Resource Server Authorization</p>
-                  <p>
-                    The Spring Boot REST backend acts as a stateless OAuth2 Resource Server. Every API request validates the RS256 JWT access token signature against Keycloak JWK certificates endpoint.
+                  <p className="text-[11px] text-kms-slate-500">
+                    Download the file or open it in its native desktop application.
                   </p>
-
-                  <div className="bg-kms-slate-50 p-4 rounded border border-kms-slate-200 font-mono text-[11px] space-y-1">
-                    <div>Authorization: Bearer &lt;keycloak-jwt-token&gt;</div>
-                    <div>Realm Roles: ROLE_ADMIN, ROLE_IT_SECURITY</div>
+                  <div className="flex items-center justify-center gap-2 pt-1">
+                    <Button variant="primary" size="sm" icon={<Download className="w-4 h-4" />} onClick={handleDownload}>
+                      Download
+                    </Button>
+                    <Button variant="outline" size="sm" icon={<ExternalLink className="w-4 h-4" />} onClick={handleOpenInDesktopApp}>
+                      Open in Desktop App
+                    </Button>
                   </div>
                 </div>
-
-                <div className="pt-10 text-[10px] text-kms-slate-400 border-t border-kms-slate-200 flex justify-between">
-                  <span>Confidential Internal Document</span>
-                  <span>Page 1 of 18</span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
-          {/* Right Inspector Sidebar */}
+          {/* Inspector */}
           <div className="lg:col-span-4 space-y-4">
             <Card>
               <Tabs
@@ -245,7 +288,7 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
                     <div>
                       <div className="text-kms-slate-500 font-medium">Security Classification</div>
                       <div className="mt-1">
-                        <Badge label={mockDoc.classification} classification={mockDoc.classification} />
+                        <Badge label={classification} classification={classification} />
                       </div>
                     </div>
 
@@ -254,109 +297,99 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
                         <div className="text-kms-slate-500 flex items-center gap-1">
                           <User className="w-3 h-3 text-kms-slate-400" /> Owner
                         </div>
-                        <div className="font-semibold text-kms-slate-900 mt-0.5">{mockDoc.owner}</div>
+                        <div className="font-semibold text-kms-slate-900 mt-0.5 truncate" title={doc.ownerEmail}>
+                          {doc.owner || '—'}
+                        </div>
                       </div>
                       <div className="pl-3">
                         <div className="text-kms-slate-500 flex items-center gap-1">
                           <Building className="w-3 h-3 text-kms-slate-400" /> Department
                         </div>
-                        <div className="font-semibold text-kms-slate-900 mt-0.5">{mockDoc.department}</div>
+                        <div className="font-semibold text-kms-slate-900 mt-0.5">{doc.department || '—'}</div>
                       </div>
                     </div>
 
                     <div className="space-y-2 pt-2 border-t border-kms-slate-100">
                       <div className="flex justify-between text-kms-slate-600">
                         <span>Document Type:</span>
-                        <span className="font-medium text-kms-slate-900">{mockDoc.documentType}</span>
+                        <span className="font-medium text-kms-slate-900">{doc.documentType || '—'}</span>
+                      </div>
+                      <div className="flex justify-between text-kms-slate-600">
+                        <span>Workflow Status:</span>
+                        <span className="font-mono font-bold text-blue-700">{doc.status || '—'}</span>
                       </div>
                       <div className="flex justify-between text-kms-slate-600">
                         <span>Current Version:</span>
-                        <span className="font-mono font-bold text-blue-700">{mockDoc.version}</span>
+                        <span className="font-mono font-bold text-blue-700">v{doc.currentVersion?.versionNumber ?? 1}</span>
                       </div>
                       <div className="flex justify-between text-kms-slate-600">
                         <span>File Size:</span>
-                        <span className="font-medium text-kms-slate-900">{mockDoc.fileSize}</span>
+                        <span className="font-medium text-kms-slate-900">{formatSize(doc.fileSizeBytes)}</span>
                       </div>
                       <div className="flex justify-between text-kms-slate-600">
-                        <span>Created Date:</span>
-                        <span className="font-medium text-kms-slate-900">{mockDoc.createdDate}</span>
+                        <span>Folder:</span>
+                        <span className="font-medium text-kms-slate-900">{doc.folderName || 'Unfiled'}</span>
+                      </div>
+                      <div className="flex justify-between text-kms-slate-600">
+                        <span>Created:</span>
+                        <span className="font-medium text-kms-slate-900">{formatDate(doc.createdAt)}</span>
                       </div>
                       <div className="flex justify-between text-kms-slate-600">
                         <span>Last Modified:</span>
-                        <span className="font-medium text-kms-slate-900">{mockDoc.modifiedDate}</span>
+                        <span className="font-medium text-kms-slate-900">{formatDate(doc.updatedAt)}</span>
                       </div>
                     </div>
+
+                    {doc.currentVersion?.storageObject?.checksumSha256 && (
+                      <div className="pt-2 border-t border-kms-slate-100 space-y-1">
+                        <div className="text-kms-slate-500 font-medium">SHA-256 Integrity Checksum</div>
+                        <div className="font-mono text-[10px] text-kms-slate-700 break-all bg-kms-slate-50 p-2 rounded border border-kms-slate-200">
+                          {doc.currentVersion.storageObject.checksumSha256}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="pt-2 border-t border-kms-slate-100 space-y-1">
                       <div className="text-kms-slate-500 font-medium flex items-center gap-1">
                         <Tag className="w-3 h-3 text-kms-slate-400" /> Taxonomy Tags
                       </div>
                       <div className="flex flex-wrap gap-1.5 pt-1">
-                        {mockDoc.tags.map((tag) => (
-                          <span key={tag} className="bg-kms-slate-100 text-kms-slate-700 px-2 py-0.5 rounded text-[11px] border border-kms-slate-200">
-                            #{tag}
-                          </span>
-                        ))}
+                        {(doc.tags ?? []).length === 0 ? (
+                          <span className="text-[11px] text-kms-slate-500">No tags assigned</span>
+                        ) : (
+                          doc.tags!.map((tag) => (
+                            <span key={tag} className="bg-kms-slate-100 text-kms-slate-700 px-2 py-0.5 rounded text-[11px] border border-kms-slate-200">
+                              #{tag}
+                            </span>
+                          ))
+                        )}
                       </div>
-                    </div>
-
-                    {/* Approval Workflow State Transition Panel (FR-25) */}
-                    <div className="pt-2 border-t border-kms-slate-100 space-y-2">
-                      <div className="text-kms-slate-500 font-medium flex items-center justify-between">
-                        <span className="flex items-center gap-1">
-                          <FileCheck className="w-3 h-3 text-kms-slate-400" /> Approval Workflow (FR-25)
-                        </span>
-                        <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                          {docStatus}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        <button
-                          onClick={() => handleAdvanceStatus('DRAFT')}
-                          className={`px-2 py-1 text-[10px] font-semibold rounded border transition-colors ${
-                            docStatus === 'DRAFT'
-                              ? 'bg-amber-100 text-amber-900 border-amber-300'
-                              : 'bg-kms-slate-50 text-kms-slate-600 border-kms-slate-200 hover:bg-kms-slate-100'
-                          }`}
-                        >
-                          Draft
-                        </button>
-                        <button
-                          onClick={() => handleAdvanceStatus('UNDER_REVIEW')}
-                          className={`px-2 py-1 text-[10px] font-semibold rounded border transition-colors ${
-                            docStatus === 'UNDER_REVIEW'
-                              ? 'bg-blue-100 text-blue-900 border-blue-300'
-                              : 'bg-kms-slate-50 text-kms-slate-600 border-kms-slate-200 hover:bg-kms-slate-100'
-                          }`}
-                        >
-                          Under Review
-                        </button>
-                        <button
-                          onClick={() => handleAdvanceStatus('PUBLISHED')}
-                          className={`px-2 py-1 text-[10px] font-semibold rounded border transition-colors ${
-                            docStatus === 'PUBLISHED'
-                              ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                              : 'bg-kms-slate-50 text-kms-slate-600 border-kms-slate-200 hover:bg-kms-slate-100'
-                          }`}
-                        >
-                          Publish
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-kms-slate-100 space-y-1">
-                      <div className="text-kms-slate-500 font-medium flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-kms-slate-400" /> Retention Schedule
-                      </div>
-                      <div className="text-[11px] font-semibold text-kms-slate-800">{mockDoc.retentionCategory}</div>
-                      <div className="text-[11px] text-kms-slate-500">Scheduled Review: {mockDoc.reviewDate}</div>
                     </div>
                   </div>
                 )}
 
                 {activeTab === 'versions' && (
                   <div className="space-y-2">
-                    <Link href={`/versions/${mockDoc.id}`}>
+                    {versions.length === 0 ? (
+                      <p className="text-[11px] text-kms-slate-500">No version history recorded.</p>
+                    ) : (
+                      versions.map((v) => (
+                        <div key={v.id} className="border border-kms-slate-200 rounded p-2 bg-kms-slate-50">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-blue-700 text-[11px]">v{v.versionNumber}</span>
+                            <span className="text-[11px] text-kms-slate-500">{formatSize(v.fileSizeBytes)}</span>
+                          </div>
+                          <div className="text-[11px] text-kms-slate-700 truncate mt-0.5">{v.fileName}</div>
+                          <div className="text-[10px] text-kms-slate-500 mt-0.5">
+                            {v.createdBy || '—'} · {formatDate(v.createdAt)}
+                          </div>
+                          {v.changeSummary && (
+                            <div className="text-[10px] text-kms-slate-600 mt-1 italic">{v.changeSummary}</div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                    <Link href={`/versions/${doc.id}`}>
                       <Button variant="outline" size="sm" className="w-full justify-center" icon={<History className="w-3.5 h-3.5" />}>
                         View Full Revision Timeline
                       </Button>
@@ -366,12 +399,27 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
 
                 {activeTab === 'comments' && (
                   <div className="space-y-2">
-                    <Link href={`/comments/${mockDoc.id}`}>
+                    <Link href={`/comments/${doc.id}`}>
                       <Button variant="outline" size="sm" className="w-full justify-center" icon={<MessageSquare className="w-3.5 h-3.5" />}>
                         Open Discussion Workspace
                       </Button>
                     </Link>
                   </div>
+                )}
+              </div>
+            </Card>
+
+            <Card title="Retention & Governance">
+              <div className="space-y-1 text-[11px]">
+                <div className="flex items-center gap-1 text-kms-slate-500 font-medium">
+                  <Calendar className="w-3 h-3 text-kms-slate-400" /> Retention is applied by document type
+                </div>
+                <p className="text-kms-slate-600">
+                  Schedules for <span className="font-semibold">{doc.documentType || 'this type'}</span> are configured
+                  under Governance → Retention Policies, and enforced daily by the disposition engine.
+                </p>
+                {doc.legalHold && (
+                  <p className="text-amber-800 font-semibold pt-1">Disposition suspended — active legal hold.</p>
                 )}
               </div>
             </Card>

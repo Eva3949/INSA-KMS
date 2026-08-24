@@ -8,6 +8,7 @@ import { Input, Select } from '@/src/components/ui/Input';
 import { Card } from '@/src/components/ui/Card';
 import { Upload, FileText, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { kmsApi } from '@/src/lib/api';
 
 export default function UploadDocumentPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -18,6 +19,7 @@ export default function UploadDocumentPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleFileDrop = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -29,24 +31,44 @@ export default function UploadDocumentPage() {
     }
   };
 
-  const handleStartUpload = (e: React.FormEvent) => {
+  const handleStartUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFile) return;
 
     setIsUploading(true);
-    setUploadProgress(10);
+    setUploadProgress(20);
+    setErrorMessage(null);
 
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsUploading(false);
-          setUploadSuccess(true);
-          return 100;
-        }
-        return prev + 25;
-      });
-    }, 400);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      if (title) {
+        formData.append('title', title);
+      }
+
+      const deptCodeMap: Record<string, string> = {
+        'Engineering': 'ITSEC',
+        'IT Security': 'ITSEC',
+        'Human Resources': 'CONTENT',
+        'Finance': 'LEGAL',
+        'Legal & Compliance': 'LEGAL',
+        'Content Management': 'CONTENT'
+      };
+      const deptCode = deptCodeMap[department] || 'GEN';
+
+      formData.append('departmentCode', deptCode);
+      formData.append('documentTypeName', documentType);
+      formData.append('confidentialityLevel', classification);
+
+      setUploadProgress(60);
+      await kmsApi.documents.upload(formData);
+      setUploadProgress(100);
+      setIsUploading(false);
+      setUploadSuccess(true);
+    } catch (err: unknown) {
+      setIsUploading(false);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to upload document');
+    }
   };
 
   return (
@@ -90,6 +112,12 @@ export default function UploadDocumentPage() {
           </Card>
         ) : (
           <form onSubmit={handleStartUpload} className="space-y-5">
+            {errorMessage && (
+              <div className="bg-red-50 border border-red-300 text-red-800 p-4 rounded text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
             {/* Drag & Drop Zone */}
             <Card title="1. Select Document File">
               <div className="border-2 border-dashed border-kms-slate-300 hover:border-blue-500 rounded-lg p-8 text-center bg-kms-slate-50 hover:bg-blue-50/30 transition-all cursor-pointer relative">

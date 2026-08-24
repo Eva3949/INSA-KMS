@@ -5,6 +5,12 @@ spring:
   application:
     name: kms-backend
 
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 500MB
+      max-request-size: 500MB
+
   datasource:
     url: ${SPRING_DATASOURCE_URL:${DB_URL:jdbc:postgresql://${DATABASE_HOST:${DB_HOST:dpg-da43olv40ujc73cpl09g-a.virginia-postgres.render.com}}:${DATABASE_PORT:${DB_PORT:5432}}/${DATABASE_NAME:${DB_NAME:insakms}}${DATABASE_SSLMODE:${DB_SSLMODE:?sslmode=require}}}}
     username: ${SPRING_DATASOURCE_USERNAME:${DATABASE_USERNAME:${DB_USER:insakms_user}}}
@@ -29,6 +35,10 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
     locations: classpath:db/migration
+    # V4/V5 were applied to the Render database from files that are not in this
+    # repository. Tolerate applied-but-missing migrations so startup is not blocked;
+    # remove this once those two scripts are restored into db/migration.
+    ignore-migration-patterns: "*:missing"
 
   security:
     oauth2:
@@ -41,3 +51,10 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+kms:
+  storage:
+    # Physical document binaries live here (relative paths resolve against the process
+    # working directory). Mount this to a durable volume in container deployments —
+    # a container filesystem is wiped on redeploy while the metadata rows survive.
+    location: ${KMS_STORAGE_LOCATION:kms-storage-data}

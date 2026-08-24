@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface FolderRepository extends JpaRepository<Folder, UUID> {
     List<Folder> findByParentIdAndIsDeletedFalse(UUID parentId);
     List<Folder> findByDepartmentIdAndIsDeletedFalse(UUID departmentId);
+    List<Folder> findByIsDeletedFalseOrderByNameAsc();
 }

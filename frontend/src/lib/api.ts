@@ -50,6 +50,8 @@ export const kmsApi = {
   // Documents
   documents: {
     list: (page = 0, size = 10) => fetchApi<any>(`/documents?page=${page}&size=${size}`),
+    mine: (page = 0, size = 20) => fetchApi<any>(`/documents/mine?page=${page}&size=${size}`),
+    recent: (limit = 20) => fetchApi<any[]>(`/documents/recent?limit=${limit}`),
     getById: (id: string) => fetchApi<any>(`/documents/${id}`),
     upload: async (formData: FormData) => {
       const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
@@ -61,7 +63,15 @@ export const kmsApi = {
         headers,
         body: formData,
       });
-      if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
+      if (!res.ok) {
+        let errText = '';
+        try {
+          errText = await res.text();
+        } catch {
+          errText = res.statusText;
+        }
+        throw new Error(`Upload failed [${res.status}]: ${errText || res.statusText || 'Server Error'}`);
+      }
       return res.json();
     },
     bulk: (payload: { operation: string; documentIds: string[]; targetFolderId?: string; tags?: string[]; confidentialityLevel?: string }) => fetchApi<any>('/documents/bulk', {
@@ -85,6 +95,25 @@ export const kmsApi = {
     delete: (id: string) => fetchApi<void>(`/documents/${id}`, { method: 'DELETE' }),
     restore: (id: string) => fetchApi<void>(`/documents/${id}/restore`, { method: 'POST' }),
     getVersions: (id: string) => fetchApi<any[]>(`/documents/${id}/versions`),
+    downloadUrl: (id: string, disposition: 'inline' | 'attachment' = 'attachment') =>
+      `${API_BASE_URL}/documents/${id}/download?disposition=${disposition}`,
+    downloadBlob: async (id: string, disposition: 'inline' | 'attachment' = 'attachment') => {
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+      const res = await fetch(`${API_BASE_URL}/documents/${id}/download?disposition=${disposition}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        let detail = res.statusText;
+        try {
+          const text = await res.text();
+          detail = JSON.parse(text)?.message || text || detail;
+        } catch {
+          /* keep statusText */
+        }
+        throw new Error(`Preview/download failed [${res.status}]: ${detail}`);
+      }
+      return res.blob();
+    },
     getComments: (id: string) => fetchApi<any[]>(`/documents/${id}/comments`),
     addComment: (id: string, text: string) => fetchApi<any>(`/documents/${id}/comments`, {
       method: 'POST',
@@ -94,7 +123,30 @@ export const kmsApi = {
 
   // Folders
   folders: {
+    list: () => fetchApi<any[]>('/folders'),
     getById: (id: string) => fetchApi<any>(`/folders/${id}`),
+    create: (payload: { name: string; parentId?: string; departmentId?: string; confidentialityLevel?: string }) =>
+      fetchApi<any>('/folders', { method: 'POST', body: JSON.stringify(payload) }),
+  },
+
+  // FR-17 Access control (folder + document ACLs)
+  permissions: {
+    getSubjects: () => fetchApi<{
+      users: Array<{ id: string; label: string; active: boolean }>;
+      groups: Array<{ id: string; label: string }>;
+      roles: string[];
+      permissionLevels: string[];
+    }>('/permissions/subjects'),
+    listFolder: (folderId: string) => fetchApi<any[]>(`/folders/${folderId}/permissions`),
+    grantFolder: (folderId: string, payload: { subjectType: string; subjectId: string; permissionLevel: string }) =>
+      fetchApi<any>(`/folders/${folderId}/permissions`, { method: 'POST', body: JSON.stringify(payload) }),
+    revokeFolder: (folderId: string, permissionId: string) =>
+      fetchApi<void>(`/folders/${folderId}/permissions/${permissionId}`, { method: 'DELETE' }),
+    listDocument: (documentId: string) => fetchApi<any[]>(`/documents/${documentId}/permissions`),
+    grantDocument: (documentId: string, payload: { subjectType: string; subjectId: string; permissionLevel: string }) =>
+      fetchApi<any>(`/documents/${documentId}/permissions`, { method: 'POST', body: JSON.stringify(payload) }),
+    revokeDocument: (documentId: string, permissionId: string) =>
+      fetchApi<void>(`/documents/${documentId}/permissions/${permissionId}`, { method: 'DELETE' }),
   },
 
   // Search
@@ -109,19 +161,104 @@ export const kmsApi = {
   // Governance & Compliance
   governance: {
     getRetentionPolicies: () => fetchApi<any[]>('/governance/retention'),
+    createRetentionPolicy: (payload: { name: string; description?: string; documentTypeId?: string; retentionDays: number; dispositionAction?: string }) =>
+      fetchApi<any>('/governance/retention', { method: 'POST', body: JSON.stringify(payload) }),
+    updateRetentionPolicy: (id: string, payload: Record<string, unknown>) =>
+      fetchApi<any>(`/governance/retention/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteRetentionPolicy: (id: string) => fetchApi<void>(`/governance/retention/${id}`, { method: 'DELETE' }),
     getLegalHolds: () => fetchApi<any[]>('/governance/legal-holds'),
     createLegalHold: (caseNumber: string, title: string, description: string) => fetchApi<any>('/governance/legal-holds', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ caseNumber, title, description }).toString(),
     }),
+    releaseLegalHold: (id: string) => fetchApi<any>(`/governance/legal-holds/${id}/release`, { method: 'PUT' }),
+    getHoldItems: (id: string) => fetchApi<any[]>(`/governance/legal-holds/${id}/items`),
+    addDocumentToHold: (id: string, documentId: string) => fetchApi<any>(`/governance/legal-holds/${id}/items`, {
+      method: 'POST',
+      body: JSON.stringify({ documentId }),
+    }),
+    removeDocumentFromHold: (id: string, documentId: string) =>
+      fetchApi<void>(`/governance/legal-holds/${id}/items/${documentId}`, { method: 'DELETE' }),
     getAuditLogs: (page = 0, size = 20) => fetchApi<any>(`/governance/audit-logs?page=${page}&size=${size}`),
+    exportAuditLogsUrl: `${API_BASE_URL}/governance/audit-logs/export`,
   },
 
   // Administration
   admin: {
     getSummary: () => fetchApi<{ totalUsers: number; totalDocuments: number; storageQuotaUsedBytes: number }>('/admin/summary'),
     getUsers: () => fetchApi<any[]>('/admin/users'),
-    getRoles: () => fetchApi<any[]>('/admin/roles'),
+    createUser: (payload: { username: string; email: string; roleName: string; departmentId?: string; temporaryPassword?: string; firstName?: string; lastName?: string }) =>
+      fetchApi<any>('/admin/users', { method: 'POST', body: JSON.stringify(payload) }),
+    resetUserPassword: (id: string, password: string, temporary = true) =>
+      fetchApi<{ message: string; username: string }>(`/admin/users/${id}/reset-password`, {
+        method: 'PUT',
+        body: JSON.stringify({ password, temporary: String(temporary) }),
+      }),
+    getIdentityProviderHealth: () => fetchApi<{ enabled: boolean; baseUrl: string; realm: string; status: string; error?: string }>(
+      '/admin/identity-provider/health'),
+    updateUser: (id: string, payload: Record<string, string>) =>
+      fetchApi<any>(`/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    activateUser: (id: string) => fetchApi<any>(`/admin/users/${id}/activate`, { method: 'PUT' }),
+    deactivateUser: (id: string) => fetchApi<any>(`/admin/users/${id}/deactivate`, { method: 'PUT' }),
+    changeUserRole: (id: string, roleName: string) =>
+      fetchApi<any>(`/admin/users/${id}/roles`, { method: 'PUT', body: JSON.stringify({ roleName }) }),
+    deleteUser: (id: string) => fetchApi<any>(`/admin/users/${id}`, { method: 'DELETE' }),
+    searchUsers: (q: string) => fetchApi<any[]>(`/admin/users/search?q=${encodeURIComponent(q)}`),
+    getRoles: () => fetchApi<Array<{ name: string; description: string; userCount: number }>>('/admin/roles'),
+
+    // Departments & quotas (FR-27)
+    getDepartments: () => fetchApi<any[]>('/admin/departments'),
+    createDepartment: (payload: { name: string; code: string; storageQuotaBytes?: number }) =>
+      fetchApi<any>('/admin/departments', { method: 'POST', body: JSON.stringify(payload) }),
+    updateDepartment: (id: string, payload: { name?: string; code?: string; storageQuotaBytes?: number }) =>
+      fetchApi<any>(`/admin/departments/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteDepartment: (id: string) => fetchApi<void>(`/admin/departments/${id}`, { method: 'DELETE' }),
+
+    // Document types (FR-06)
+    getDocumentTypes: () => fetchApi<any[]>('/admin/document-types'),
+    createDocumentType: (payload: { name: string; description?: string }) =>
+      fetchApi<any>('/admin/document-types', { method: 'POST', body: JSON.stringify(payload) }),
+    updateDocumentType: (id: string, payload: { name?: string; description?: string }) =>
+      fetchApi<any>(`/admin/document-types/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteDocumentType: (id: string) => fetchApi<void>(`/admin/document-types/${id}`, { method: 'DELETE' }),
+
+    // Taxonomy / tags (FR-03)
+    getTags: () => fetchApi<any[]>('/admin/taxonomy/tags'),
+    createTag: (payload: { name: string; category?: string }) =>
+      fetchApi<any>('/admin/taxonomy/tags', { method: 'POST', body: JSON.stringify(payload) }),
+    updateTag: (id: string, payload: { name?: string; category?: string }) =>
+      fetchApi<any>(`/admin/taxonomy/tags/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteTag: (id: string) => fetchApi<void>(`/admin/taxonomy/tags/${id}`, { method: 'DELETE' }),
+
+    // Groups (FR-27)
+    getGroups: () => fetchApi<any[]>('/admin/groups'),
+
+    // System configuration (FR-27)
+    getSettings: () => fetchApi<any[]>('/admin/settings'),
+    updateSettings: (payload: Record<string, string>) =>
+      fetchApi<any[]>('/admin/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+
+    // Storage integrity
+    getStorageStats: () => fetchApi<{
+      totalObjects: number;
+      totalBytes: number;
+      orphanedObjects: number;
+      duplicateChecksums: Array<{ checksumSha256: string; copies: number; wastedBytes: number }>;
+    }>('/admin/storage/stats'),
+    getStorageObjects: (limit = 50) => fetchApi<any[]>(`/admin/storage/objects?limit=${limit}`),
+
+    // IT security monitoring (FR-22)
+    getSecurityEvents: (page = 0, size = 25) => fetchApi<any>(`/admin/security/events?page=${page}&size=${size}`),
+
+    // Reports (FR-30 / FR-31)
+    getStorageGrowthReport: (months = 12) => fetchApi<any>(`/admin/reports/storage-growth?months=${months}`),
+    getActiveUsersReport: (days = 30, limit = 15) => fetchApi<any>(`/admin/reports/active-users?days=${days}&limit=${limit}`),
+    getTopSearchesReport: (days = 30, limit = 10) => fetchApi<any>(`/admin/reports/top-searches?days=${days}&limit=${limit}`),
+    getStaleContentReport: (days = 365, limit = 100) => fetchApi<any>(`/admin/reports/stale-content?days=${days}&limit=${limit}`),
+
+    // Manual retention disposition run (FR-28)
+    runRetentionDispositions: () => fetchApi<{ archived: number; purged: number; reviewFlagged: number; skippedOnLegalHold: number }>(
+      '/admin/retention/run', { method: 'POST' }),
   },
 };

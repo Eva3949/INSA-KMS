@@ -35,9 +35,22 @@ interface Document {
   fileName?: string;
   department?: string;
   owner?: string;
-  currentVersion?: string;
+  /** The API returns the current version as an object; older payloads used a plain string. */
+  currentVersion?: string | { versionNumber?: number };
+  confidentialityLevel?: string;
   securityClassification?: string;
   updatedAt?: string;
+}
+
+function getVersionLabel(doc: Document): string {
+  if (!doc.currentVersion) return 'v1';
+  if (typeof doc.currentVersion === 'string') return doc.currentVersion;
+  return `v${doc.currentVersion.versionNumber ?? 1}`;
+}
+
+function getClassification(doc: Document): 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED' {
+  return (doc.confidentialityLevel || doc.securityClassification || 'INTERNAL') as
+    'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
 }
 
 function formatBytes(bytes: number): string {
@@ -104,18 +117,15 @@ export default function DashboardOverviewPage() {
     },
     {
       header: 'Classification',
-      accessor: (doc: Document) =>
-        doc.securityClassification ? (
-          <Badge
-            label={doc.securityClassification}
-            classification={doc.securityClassification as 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED'}
-          />
-        ) : <span className="text-xs text-slate-400">?</span>,
+      accessor: (doc: Document) => {
+        const classification = getClassification(doc);
+        return <Badge label={classification} classification={classification} />;
+      },
     },
     {
       header: 'Version',
       accessor: (doc: Document) => (
-        <span className="font-mono text-xs text-blue-700 font-bold">{doc.currentVersion || 'v1'}</span>
+        <span className="font-mono text-xs text-blue-700 font-bold">{getVersionLabel(doc)}</span>
       ),
     },
   ];

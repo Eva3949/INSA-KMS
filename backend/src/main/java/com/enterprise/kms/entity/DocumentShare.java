@@ -20,6 +20,7 @@ public class DocumentShare {
     private User grantedToUser;
 
     @Column(name = "permission_level", nullable = false)
+    @org.hibernate.annotations.ColumnTransformer(write = "?::permission_level_enum")
     private String permissionLevel = "VIEW";
 
     @Column(name = "created_at", nullable = false, updatable = false)

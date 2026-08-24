@@ -1,11 +1,14 @@
 package com.enterprise.kms.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "document_versions")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class DocumentVersion {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -13,6 +16,7 @@ public class DocumentVersion {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "document_id", nullable = false)
+    @JsonIgnore
     private Document document;
 
     @Column(name = "version_number", nullable = false)

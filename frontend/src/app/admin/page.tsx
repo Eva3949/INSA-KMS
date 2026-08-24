@@ -166,6 +166,14 @@ export default function AdminDashboardPage() {
                 <span>Roles &amp; Access Matrix</span>
                 <ArrowUpRight className="w-4 h-4" />
               </Link>
+              <Link href="/admin/groups" className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-md flex items-center justify-between font-semibold text-slate-800 hover:text-blue-700 transition-colors">
+                <span>Groups &amp; Membership</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </Link>
+              <Link href="/admin/permissions" className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-md flex items-center justify-between font-semibold text-slate-800 hover:text-blue-700 transition-colors">
+                <span>Folder &amp; Document Permissions</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </Link>
               <Link href="/admin/security" className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-md flex items-center justify-between font-semibold text-slate-800 hover:text-blue-700 transition-colors">
                 <span>Security Alerts &amp; Monitoring</span>
                 <ArrowUpRight className="w-4 h-4" />

@@ -1,11 +1,13 @@
 package com.enterprise.kms.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "documents")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Document {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -31,9 +33,11 @@ public class Document {
     private DocumentType documentType;
 
     @Column(name = "confidentiality_level", nullable = false)
+    @org.hibernate.annotations.ColumnTransformer(write = "?::confidentiality_level_enum")
     private String confidentialityLevel = "INTERNAL";
 
     @Column(nullable = false)
+    @org.hibernate.annotations.ColumnTransformer(write = "?::document_status_enum")
     private String status = "PUBLISHED";
 
     @ManyToOne(fetch = FetchType.LAZY)
