@@ -15,7 +15,11 @@ import {
   Users,
   HardDrive,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Star,
+  Share2,
+  Upload,
+  Folder
 } from 'lucide-react';
 import Link from 'next/link';
 import { kmsApi } from '@/src/lib/api';
@@ -72,6 +76,13 @@ export default function DashboardOverviewPage() {
   const [docsError, setDocsError] = useState<string | null>(null);
   const [docsLoading, setDocsLoading] = useState(true);
 
+  const [myDocsCount, setMyDocsCount] = useState(0);
+  const [myDocsLoading, setMyDocsLoading] = useState(false);
+  const [favorites, setFavorites] = useState<Document[]>([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
+  const [sharedCount, setSharedCount] = useState(0);
+  const [sharedLoading, setSharedLoading] = useState(false);
+
   useEffect(() => {
     if (!isAdmin) return;
     setSummaryLoading(true);
@@ -97,6 +108,39 @@ export default function DashboardOverviewPage() {
         }
       })
       .finally(() => setDocsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setMyDocsLoading(true);
+    kmsApi.documents.mine()
+      .then((data) => {
+        const items = Array.isArray(data) ? data : (data as { content?: Document[] }).content ?? [];
+        setMyDocsCount(items.length);
+      })
+      .catch(() => setMyDocsCount(0))
+      .finally(() => setMyDocsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setFavoritesLoading(true);
+    kmsApi.documents.getFavorites()
+      .then((data) => {
+        const items = Array.isArray(data) ? data : (data as { content?: Document[] }).content ?? [];
+        setFavorites(items.slice(0, 5));
+      })
+      .catch(() => setFavorites([]))
+      .finally(() => setFavoritesLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setSharedLoading(true);
+    kmsApi.documents.getSharedWithMe()
+      .then((data) => {
+        const items = Array.isArray(data) ? data : (data as { content?: Document[] }).content ?? [];
+        setSharedCount(items.length);
+      })
+      .catch(() => setSharedCount(0))
+      .finally(() => setSharedLoading(false));
   }, []);
 
   const docColumns = [
@@ -298,6 +342,115 @@ export default function DashboardOverviewPage() {
             />
           )}
         </div>
+
+        {/* Contributor Dashboard */}
+        {!isAdmin && (
+          <div className="space-y-6">
+            {/* Quick Stats Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">My Documents</p>
+                    <p className="text-2xl font-bold text-slate-900 mt-1 font-mono">
+                      {myDocsLoading ? '...' : myDocsCount.toLocaleString()}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1">Documents you uploaded</p>
+                  </div>
+                  <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                    <FileText className="w-5 h-5 text-blue-700" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Shared With Me</p>
+                    <p className="text-2xl font-bold text-slate-900 mt-1 font-mono">
+                      {sharedLoading ? '...' : sharedCount.toLocaleString()}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1">Documents shared with you</p>
+                  </div>
+                  <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                    <Share2 className="w-5 h-5 text-emerald-700" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Favorites</p>
+                    <p className="text-2xl font-bold text-slate-900 mt-1 font-mono">
+                      {favoritesLoading ? '...' : favorites.length.toLocaleString()}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1">Bookmarked documents</p>
+                  </div>
+                  <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                    <Star className="w-5 h-5 text-amber-600" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Quick Actions</h3>
+              <div className="flex flex-wrap gap-3">
+                <Link href="/upload">
+                  <Button variant="primary" size="sm" icon={<Upload className="w-4 h-4" />}>
+                    Upload Document
+                  </Button>
+                </Link>
+                <Link href="/search">
+                  <Button variant="outline" size="sm" icon={<Search className="w-4 h-4" />}>
+                    Search Documents
+                  </Button>
+                </Link>
+                <Link href="/library">
+                  <Button variant="outline" size="sm" icon={<Folder className="w-4 h-4" />}>
+                    My Documents
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
+            {/* My Favorites */}
+            {favorites.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">My Favorites</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {favorites.map((doc) => (
+                    <Link key={doc.id} href={`/preview/${doc.id}`}>
+                      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:border-blue-300 hover:shadow-md transition-all cursor-pointer h-full">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+                            <Star className="w-4 h-4 text-amber-600 fill-amber-400" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-slate-900 truncate">
+                              {doc.title || doc.fileName || doc.id}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <Badge
+                                label={getClassification(doc)}
+                                classification={getClassification(doc)}
+                              />
+                              <span className="text-[11px] text-slate-500">{doc.department || ''}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </AppShell>
   );

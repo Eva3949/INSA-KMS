@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AppShell } from '@/src/components/layout/AppShell';
 import { Breadcrumb } from '@/src/components/ui/Breadcrumb';
 import { Button } from '@/src/components/ui/Button';
@@ -15,11 +15,69 @@ export default function UploadDocumentPage() {
   const [title, setTitle] = useState('');
   const [department, setDepartment] = useState('Engineering');
   const [classification, setClassification] = useState('INTERNAL');
-  const [documentType, setDocumentType] = useState('Policy');
+  const [documentType, setDocumentType] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [documentTypes, setDocumentTypes] = useState<Array<{ id: string; name: string; description?: string }>>([]);
+  const [selectedTypeId, setSelectedTypeId] = useState<string>('');
+  const [customFields, setCustomFields] = useState<Array<{ id: string; fieldKey: string; label: string; dataType: string; required: boolean }>>([]);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string; code: string }>>([]);
+
+  useEffect(() => {
+    kmsApi.admin.getDepartments()
+      .then((data) => setDepartments(Array.isArray(data) ? data : []))
+      .catch(() => {
+        setDepartments([
+          { id: '1', name: 'Engineering', code: 'ENG' },
+          { id: '2', name: 'IT Security', code: 'ITSEC' },
+          { id: '3', name: 'Human Resources', code: 'HR' },
+          { id: '4', name: 'Finance', code: 'FIN' },
+          { id: '5', name: 'Legal & Compliance', code: 'LEGAL' },
+          { id: '6', name: 'Content Management', code: 'CONTENT' },
+        ]);
+      });
+  }, []);
+
+  useEffect(() => {
+    kmsApi.admin.getDocumentTypes().then((types) => {
+      setDocumentTypes(types);
+      if (types.length > 0) {
+        setSelectedTypeId(types[0].id);
+        setDocumentType(types[0].name);
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTypeId) {
+      setCustomFields([]);
+      setCustomFieldValues({});
+      return;
+    }
+    kmsApi.admin.listTypeFields(selectedTypeId).then((fields) => {
+      setCustomFields(fields);
+      setCustomFieldValues((prev) => {
+        const next: Record<string, string> = {};
+        fields.forEach((f) => {
+          next[f.fieldKey] = prev[f.fieldKey] || '';
+        });
+        return next;
+      });
+    }).catch(() => {
+      setCustomFields([]);
+      setCustomFieldValues({});
+    });
+  }, [selectedTypeId]);
+
+  const handleDocumentTypeChange = useCallback((typeName: string) => {
+    setDocumentType(typeName);
+    const match = documentTypes.find((dt) => dt.name === typeName);
+    setSelectedTypeId(match?.id || '');
+  }, [documentTypes]);
 
   const handleFileDrop = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -35,6 +93,12 @@ export default function UploadDocumentPage() {
     e.preventDefault();
     if (!selectedFile) return;
 
+    const missingRequired = customFields.filter((f) => f.required && !customFieldValues[f.fieldKey]?.trim());
+    if (missingRequired.length > 0) {
+      setErrorMessage(`Required fields must be filled: ${missingRequired.map((f) => f.label).join(', ')}`);
+      return;
+    }
+
     setIsUploading(true);
     setUploadProgress(20);
     setErrorMessage(null);
@@ -46,19 +110,31 @@ export default function UploadDocumentPage() {
         formData.append('title', title);
       }
 
-      const deptCodeMap: Record<string, string> = {
-        'Engineering': 'ITSEC',
-        'IT Security': 'ITSEC',
-        'Human Resources': 'CONTENT',
-        'Finance': 'LEGAL',
-        'Legal & Compliance': 'LEGAL',
-        'Content Management': 'CONTENT'
-      };
-      const deptCode = deptCodeMap[department] || 'GEN';
+      let deptCode = 'GEN';
+      const matchedDept = departments.find((d) => d.name === department);
+      if (matchedDept?.code) {
+        deptCode = matchedDept.code;
+      } else {
+        const fallbackMap: Record<string, string> = {
+          'Engineering': 'ENG',
+          'IT Security': 'ITSEC',
+          'Human Resources': 'HR',
+          'Finance': 'FIN',
+          'Legal & Compliance': 'LEGAL',
+          'Content Management': 'CONTENT',
+        };
+        deptCode = fallbackMap[department] || 'GEN';
+      }
 
       formData.append('departmentCode', deptCode);
       formData.append('documentTypeName', documentType);
       formData.append('confidentialityLevel', classification);
+
+      Object.entries(customFieldValues).forEach(([fieldKey, value]) => {
+        if (value) {
+          formData.append(`metadata.${fieldKey}`, value);
+        }
+      });
 
       setUploadProgress(60);
       await kmsApi.documents.upload(formData);
@@ -104,6 +180,8 @@ export default function UploadDocumentPage() {
                   setUploadSuccess(false);
                   setSelectedFile(null);
                   setTitle('');
+                  setCustomFieldValues({});
+                  setErrorMessage(null);
                 }}
               >
                 Upload Another File
@@ -163,12 +241,15 @@ export default function UploadDocumentPage() {
                 />
                 <Select
                   label="Responsible Department"
-                  options={[
-                    { label: 'Engineering', value: 'Engineering' },
-                    { label: 'IT Security', value: 'IT Security' },
-                    { label: 'Human Resources', value: 'Human Resources' },
-                    { label: 'Finance', value: 'Finance' },
-                  ]}
+                  options={departments.length > 0
+                    ? departments.map((d) => ({ label: d.name, value: d.name }))
+                    : [
+                        { label: 'Engineering', value: 'Engineering' },
+                        { label: 'IT Security', value: 'IT Security' },
+                        { label: 'Human Resources', value: 'Human Resources' },
+                        { label: 'Finance', value: 'Finance' },
+                      ]
+                  }
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
                 />
@@ -185,17 +266,29 @@ export default function UploadDocumentPage() {
                 />
                 <Select
                   label="Document Type Category"
-                  options={[
-                    { label: 'Policy / Standard', value: 'Policy' },
-                    { label: 'Contract / Legal Agreement', value: 'Contract' },
-                    { label: 'Financial Audit / Report', value: 'Report' },
-                    { label: 'Template / Standard Form', value: 'Template' },
-                  ]}
+                  options={documentTypes.map((dt) => ({ label: dt.name, value: dt.name }))}
                   value={documentType}
-                  onChange={(e) => setDocumentType(e.target.value)}
+                  onChange={(e) => handleDocumentTypeChange(e.target.value)}
                 />
               </div>
             </Card>
+
+            {customFields.length > 0 && (
+              <Card title="3. Type-Specific Metadata">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {customFields.map((field) => (
+                    <Input
+                      key={field.id}
+                      label={field.label + (field.required ? ' *' : '')}
+                      value={customFieldValues[field.fieldKey] || ''}
+                      onChange={(e) => setCustomFieldValues((prev) => ({ ...prev, [field.fieldKey]: e.target.value }))}
+                      placeholder={`Enter ${field.label.toLowerCase()}`}
+                      required={field.required}
+                    />
+                  ))}
+                </div>
+              </Card>
+            )}
 
             {/* Progress Drawer Header */}
             {isUploading && (
@@ -226,7 +319,7 @@ export default function UploadDocumentPage() {
                 type="submit"
                 variant="primary"
                 size="md"
-                disabled={!selectedFile || isUploading}
+                disabled={!selectedFile || isUploading || customFields.some((f) => f.required && !customFieldValues[f.fieldKey]?.trim())}
                 icon={isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
               >
                 Start Upload & Complete Registration

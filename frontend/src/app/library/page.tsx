@@ -16,12 +16,16 @@ import {
   Plus, 
   Filter, 
   Lock, 
+  LockOpen,
   FileCheck, 
   Share2, 
   MoreVertical, 
   Trash2,
   Tag,
-  FolderPlus
+  FolderPlus,
+  Loader2,
+  ShieldCheck,
+  History,
 } from 'lucide-react';
 import Link from 'next/link';
 import { kmsApi } from '@/src/lib/api';
@@ -95,22 +99,39 @@ export default function DocumentLibraryPage() {
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [filterClass, setFilterClass] = useState('ALL');
+  const [lockStatuses, setLockStatuses] = useState<Record<string, { locked: boolean; lockedBy?: string }>>({});
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [checkinDocId, setCheckinDocId] = useState<string | null>(null);
+  const [checkinFile, setCheckinFile] = useState<File | null>(null);
+  const [checkinLoading, setCheckinLoading] = useState(false);
+  const [libraryMessage, setLibraryMessage] = useState<string | null>(null);
+  const [folderCreating, setFolderCreating] = useState(false);
 
   const loadDocuments = useCallback((page: number) => {
     setIsLoading(true);
     setError(null);
     kmsApi.documents.list(page, PAGE_SIZE)
       .then((data) => {
+        let docs: ApiDocument[];
         if (Array.isArray(data)) {
-          setDocuments(data as ApiDocument[]);
+          docs = data as ApiDocument[];
+          setDocuments(docs);
           setTotalPages(1);
-          setTotalItems((data as ApiDocument[]).length);
+          setTotalItems(docs.length);
         } else {
           const paged = data as { content?: ApiDocument[]; totalPages?: number; totalElements?: number };
-          setDocuments(paged.content ?? []);
+          docs = paged.content ?? [];
+          setDocuments(docs);
           setTotalPages(paged.totalPages ?? 1);
           setTotalItems(paged.totalElements ?? 0);
         }
+        docs.forEach((doc) => {
+          kmsApi.documents.getLockStatus(doc.id)
+            .then((status) => {
+              setLockStatuses((prev) => ({ ...prev, [doc.id]: { locked: status.locked, lockedBy: status.lockedBy } }));
+            })
+            .catch(() => {});
+        });
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Failed to load documents';
@@ -122,6 +143,22 @@ export default function DocumentLibraryPage() {
   useEffect(() => {
     loadDocuments(currentPage);
   }, [loadDocuments, currentPage]);
+
+  const handleCreateFolder = async () => {
+    if (!newFolderName.trim()) return;
+    setFolderCreating(true);
+    try {
+      await kmsApi.folders.create({ name: newFolderName.trim() });
+      setIsFolderModalOpen(false);
+      setNewFolderName('');
+      setLibraryMessage('Folder created successfully.');
+      loadDocuments(currentPage);
+    } catch (err: unknown) {
+      setLibraryMessage(err instanceof Error ? err.message : 'Failed to create folder');
+    } finally {
+      setFolderCreating(false);
+    }
+  };
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) setSelectedIds(documents.map((d) => d.id));
@@ -137,6 +174,41 @@ export default function DocumentLibraryPage() {
     if (filterClass !== 'ALL' && classification !== filterClass) return false;
     return true;
   });
+
+  const handleCheckout = async (docId: string) => {
+    setCheckoutLoading(docId);
+    try {
+      await kmsApi.documents.checkout(docId);
+      const status = await kmsApi.documents.getLockStatus(docId);
+      setLockStatuses((prev) => ({ ...prev, [docId]: { locked: status.locked, lockedBy: status.lockedBy } }));
+      setDocuments((prev) => prev.map((d) => d.id === docId ? { ...d, isCheckedOut: true } : d));
+      setLibraryMessage('Document checked out successfully.');
+    } catch (err: unknown) {
+      setLibraryMessage(err instanceof Error ? err.message : 'Checkout failed');
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
+
+  const handleCheckin = async (docId: string) => {
+    if (!checkinFile) return;
+    setCheckinLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', checkinFile);
+      await kmsApi.documents.checkin(docId, formData);
+      const status = await kmsApi.documents.getLockStatus(docId);
+      setLockStatuses((prev) => ({ ...prev, [docId]: { locked: status.locked, lockedBy: status.lockedBy } }));
+      setDocuments((prev) => prev.map((d) => d.id === docId ? { ...d, isCheckedOut: false } : d));
+      setCheckinDocId(null);
+      setCheckinFile(null);
+      setLibraryMessage('Document checked in successfully.');
+    } catch (err: unknown) {
+      setLibraryMessage(err instanceof Error ? err.message : 'Check-in failed');
+    } finally {
+      setCheckinLoading(false);
+    }
+  };
 
   const columns = [
     {
@@ -199,18 +271,12 @@ export default function DocumentLibraryPage() {
           <Link href={`/preview/${doc.id}`}>
             <Button variant="ghost" size="sm" icon={<FileCheck className="w-3.5 h-3.5" />} title="Preview" />
           </Link>
-          {canWrite && (
-            <Link href={`/share/${doc.id}`}>
-              <Button variant="ghost" size="sm" icon={<Share2 className="w-3.5 h-3.5" />} title="Share" />
-            </Link>
-          )}
-          <button
-            onClick={() => setSelectedDoc(doc)}
-            className="p-1 rounded hover:bg-kms-slate-100 text-kms-slate-500 hover:text-kms-slate-900"
-            title="Details"
-          >
-            <MoreVertical className="w-3.5 h-3.5" />
-          </button>
+          <Link href={`/share/${doc.id}`}>
+            <Button variant="ghost" size="sm" icon={<Share2 className="w-3.5 h-3.5" />} title="Share" />
+          </Link>
+          <Link href={`/versions/${doc.id}`}>
+            <Button variant="ghost" size="sm" icon={<History className="w-3.5 h-3.5" />} title="Version History" />
+          </Link>
         </div>
       ),
     },
@@ -258,10 +324,59 @@ export default function DocumentLibraryPage() {
             </div>
             {canWrite && (
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" icon={<Tag className="w-3.5 h-3.5" />}>Bulk Tag</Button>
-                <Button variant="danger" size="sm" icon={<Trash2 className="w-3.5 h-3.5" />}>Delete Selected</Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={<Tag className="w-3.5 h-3.5" />}
+                  onClick={async () => {
+                    const tag = window.prompt('Enter tag name:');
+                    if (!tag) return;
+                    try {
+                      await kmsApi.documents.bulk({ operation: 'tag', documentIds: selectedIds, tags: [tag] });
+                      setLibraryMessage('Tags applied successfully.');
+                      setSelectedIds([]);
+                      loadDocuments(currentPage);
+                    } catch (err: unknown) {
+                      setLibraryMessage(err instanceof Error ? err.message : 'Failed to apply tags');
+                    }
+                  }}
+                >
+                  Bulk Tag
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon={<Trash2 className="w-3.5 h-3.5" />}
+                  onClick={async () => {
+                    if (!window.confirm(`Delete ${selectedIds.length} selected document(s)?`)) return;
+                    try {
+                      for (const id of selectedIds) {
+                        await kmsApi.documents.delete(id);
+                      }
+                      setLibraryMessage('Documents deleted successfully.');
+                      setSelectedIds([]);
+                      loadDocuments(currentPage);
+                    } catch (err: unknown) {
+                      setLibraryMessage(err instanceof Error ? err.message : 'Failed to delete documents');
+                    }
+                  }}
+                >
+                  Delete Selected
+                </Button>
               </div>
             )}
+          </div>
+        )}
+
+        {libraryMessage && (
+          <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 text-xs rounded flex items-center justify-between">
+            <div className="flex items-center gap-2 font-medium">
+              <ShieldCheck className="w-4 h-4 text-blue-700" />
+              <span>{libraryMessage}</span>
+            </div>
+            <button onClick={() => setLibraryMessage(null)} className="text-blue-700 font-bold hover:underline">
+              Dismiss
+            </button>
           </div>
         )}
 
@@ -386,8 +501,10 @@ export default function DocumentLibraryPage() {
           subtitle="Folders organize documents hierarchically within department boundaries."
           footer={
             <>
-              <Button variant="outline" size="sm" onClick={() => setIsFolderModalOpen(false)}>Cancel</Button>
-              <Button variant="primary" size="sm" onClick={() => setIsFolderModalOpen(false)}>Create Folder</Button>
+              <Button variant="outline" size="sm" onClick={() => { setIsFolderModalOpen(false); setNewFolderName(''); }}>Cancel</Button>
+              <Button variant="primary" size="sm" onClick={handleCreateFolder} disabled={folderCreating || !newFolderName.trim()}>
+                {folderCreating ? 'Creating...' : 'Create Folder'}
+              </Button>
             </>
           }
         >

@@ -158,11 +158,20 @@ export default function AdvancedSearchPage() {
               {query.trim() && (
                 <button
                   type="button"
-                  onClick={() => {
-                    const saved = JSON.parse(localStorage.getItem('kms_saved_searches') || '[]');
-                    saved.push({ id: Date.now().toString(), name: query, query, alertFrequency: 'DAILY' });
-                    localStorage.setItem('kms_saved_searches', JSON.stringify(saved));
-                    alert(`Search "${query}" saved to your Saved Searches list!`);
+                  onClick={async () => {
+                    try {
+                      const token = sessionStorage.getItem('kms_access_token');
+                      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
+                      const res = await fetch(`${API_BASE_URL}/search/saved`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({ name: query, queryJson: query }),
+                      });
+                      if (!res.ok) throw new Error('Failed to save');
+                      alert(`Search "${query}" saved to your Saved Searches list!`);
+                    } catch (err) {
+                      alert(err instanceof Error ? err.message : 'Failed to save search');
+                    }
                   }}
                   className="text-blue-700 hover:underline font-semibold flex items-center gap-1 text-xs"
                 >

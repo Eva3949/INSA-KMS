@@ -48,6 +48,7 @@ export const kmsApi = {
 
   // Users Profile
   getCurrentUser: () => fetchApi<{ id?: string; username: string; email: string; fullName: string; department?: string; roles: string[] }>('/users/me'),
+  getMyApprovals: () => fetchApi<any[]>('/users/me/approvals'),
 
   // Documents
   documents: {
@@ -125,6 +126,24 @@ export const kmsApi = {
       method: 'POST',
       body: JSON.stringify({ content: text }),
     }),
+    getFavoriteStatus: (id: string) => fetchApi<{ favorited: boolean }>(`/documents/${id}/favorite/status`),
+    toggleFavorite: (id: string) => fetchApi<{ favorited: boolean }>(`/documents/${id}/favorite/toggle`, { method: 'POST' }),
+    getFavorites: () => fetchApi<any[]>('/documents/favorites'),
+    getSharedWithMe: () => fetchApi<any[]>('/documents/shared-with-me'),
+    getLockStatus: (id: string) => fetchApi<any>(`/documents/${id}/lock-status`),
+    checkout: (id: string) => fetchApi<any>(`/documents/${id}/checkout`, { method: 'POST' }),
+    checkin: async (id: string, formData: FormData) => {
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE_URL}/documents/${id}/checkin`, { method: 'POST', headers, body: formData });
+      if (!res.ok) throw new Error(`Check-in failed: ${res.statusText}`);
+      return res.json();
+    },
+    unlock: (id: string) => fetchApi<any>(`/documents/${id}/unlock`, { method: 'POST' }),
+    getShareLinks: (id: string) => fetchApi<any[]>(`/documents/${id}/share-links`),
+    createShareLink: (id: string, payload: { expiryHours?: number; password?: string }) =>
+      fetchApi<any>(`/documents/${id}/share-link`, { method: 'POST', body: JSON.stringify(payload) }),
   },
 
   // Folders
@@ -314,5 +333,13 @@ export const kmsApi = {
     // Manual retention disposition run (FR-28)
     runRetentionDispositions: () => fetchApi<{ archived: number; purged: number; reviewFlagged: number; skippedOnLegalHold: number }>(
       '/admin/retention/run', { method: 'POST' }),
+
+    // Approval workflow actions (FR-25)
+    getPendingApprovals: () => fetchApi<any[]>('/admin/approvals/pending'),
+    decideApproval: (workflowId: string, stepId: string, decision: string, comments?: string) =>
+      fetchApi<any>(`/admin/approvals/${workflowId}/steps/${stepId}/decide`, {
+        method: 'POST',
+        body: JSON.stringify({ decision, comments }),
+      }),
   },
 };

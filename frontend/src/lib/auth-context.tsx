@@ -201,10 +201,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchUser]);
 
   const logout = useCallback(() => {
+    const refreshToken = getStoredRefreshToken();
+    
+    // Clear local state immediately
     sessionStorage.removeItem('kms_access_token');
     sessionStorage.removeItem('kms_refresh_token');
     setUser(null);
     document.cookie = 'kms_auth_present=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+    
+    // Attempt to revoke the refresh token server-side via Keycloak logout endpoint
+    if (refreshToken) {
+      fetch(
+        `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/logout`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: CLIENT_ID,
+            refresh_token: refreshToken,
+          }),
+        }
+      ).catch(() => {
+        // Non-critical — local state is already cleared
+      });
+    }
+    
     window.location.href = '/login';
   }, []);
 

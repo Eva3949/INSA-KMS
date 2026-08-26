@@ -171,6 +171,17 @@ public class ApprovalService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Document must be in DRAFT or PUBLISHED status to submit for approval. Current: " + doc.getStatus());
         }
+
+        // Only document owner (author) or admin can submit for approval
+        User caller = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        boolean isOwner = doc.getAuthor() != null && doc.getAuthor().getId().equals(caller.getId());
+        boolean isAdmin = "ROLE_ADMIN".equals(caller.getRoleName());
+        if (!isOwner && !isAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only the document owner or an admin can submit for approval");
+        }
+
         if (workflowRepository.findByDocumentId(documentId)
                 .filter(w -> "PENDING".equals(w.getStatus()) || "IN_PROGRESS".equals(w.getStatus()))
                 .isPresent()) {
@@ -190,9 +201,12 @@ public class ApprovalService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Approval template has no steps");
         }
 
+        User submitter = userRepository.findByUsername(username).orElse(null);
+
         ApprovalWorkflow workflow = new ApprovalWorkflow();
         workflow.setDocument(doc);
         workflow.setTemplate(template);
+        workflow.setSubmittedBy(submitter);
         workflow.setTitle(doc.getTitle() + " — " + template.getName());
         workflow.setStatus("IN_PROGRESS");
         workflow = workflowRepository.save(workflow);
@@ -329,9 +343,12 @@ public class ApprovalService {
         row.put("id", workflow.getId());
         row.put("documentId", workflow.getDocument() != null ? workflow.getDocument().getId() : null);
         row.put("documentTitle", workflow.getDocument() != null ? workflow.getDocument().getTitle() : null);
+        row.put("documentStatus", workflow.getDocument() != null ? workflow.getDocument().getStatus() : null);
+        row.put("documentAuthor", workflow.getDocument() != null && workflow.getDocument().getAuthor() != null ? workflow.getDocument().getAuthor().getUsername() : null);
         row.put("title", workflow.getTitle());
         row.put("status", workflow.getStatus());
         row.put("templateName", workflow.getTemplate() != null ? workflow.getTemplate().getName() : null);
+        row.put("documentStatus", workflow.getDocument() != null ? workflow.getDocument().getStatus() : null);
         row.put("createdAt", workflow.getCreatedAt());
         row.put("completedAt", workflow.getCompletedAt());
 
@@ -362,6 +379,18 @@ public class ApprovalService {
         List<ApprovalWorkflow> workflows = statusFilter != null && !statusFilter.isBlank()
                 ? workflowRepository.findByStatus(statusFilter)
                 : workflowRepository.findAll();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ApprovalWorkflow wf : workflows) {
+            result.add(describeWorkflow(wf));
+        }
+        return result;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> listMySubmissions(String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        List<ApprovalWorkflow> workflows = workflowRepository.findBySubmittedByIdOrderByCreatedAtDesc(user.getId());
         List<Map<String, Object>> result = new ArrayList<>();
         for (ApprovalWorkflow wf : workflows) {
             result.add(describeWorkflow(wf));

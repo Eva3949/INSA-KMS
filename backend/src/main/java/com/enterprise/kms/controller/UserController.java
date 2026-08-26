@@ -3,6 +3,7 @@ package com.enterprise.kms.controller;
 import com.enterprise.kms.entity.User;
 import com.enterprise.kms.repository.UserRepository;
 import com.enterprise.kms.security.SecurityUtils;
+import com.enterprise.kms.service.ApprovalService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,9 +17,11 @@ import java.util.Map;
 public class UserController {
 
     private final UserRepository userRepository;
+    private final ApprovalService approvalService;
 
-    public UserController(UserRepository userRepository) {
+    public UserController(UserRepository userRepository, ApprovalService approvalService) {
         this.userRepository = userRepository;
+        this.approvalService = approvalService;
     }
 
     @GetMapping("/me")
@@ -47,5 +50,11 @@ public class UserController {
                 "department", user.getDepartment() != null ? user.getDepartment().getName() : "IT Security",
                 "roles", roles
         ));
+    }
+
+    @GetMapping("/me/approvals")
+    public ResponseEntity<List<Map<String, Object>>> getMySubmissions() {
+        String username = SecurityUtils.getCurrentUsername();
+        return ResponseEntity.ok(approvalService.listMySubmissions(username));
     }
 }

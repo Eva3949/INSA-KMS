@@ -22,9 +22,13 @@ import {
   User,
   Building,
   ExternalLink,
+  Star,
+  Send,
+  Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { kmsApi } from '@/src/lib/api';
+import { useAuth } from '@/src/lib/auth-context';
 
 interface ApiDocument {
   id: string;
@@ -76,6 +80,7 @@ const INLINE_TYPES = ['application/pdf', 'image/png', 'image/jpeg', 'image/gif',
 
 export default function DocumentPreviewWorkspacePage({ params }: { params: { id: string } }) {
   const docId = params.id;
+  const { roles, user } = useAuth();
   const [activeTab, setActiveTab] = useState('metadata');
   const [doc, setDoc] = useState<ApiDocument | null>(null);
   const [versions, setVersions] = useState<VersionRow[]>([]);
@@ -84,14 +89,28 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const [submittingApproval, setSubmittingApproval] = useState(false);
+  const [approvalTemplates, setApprovalTemplates] = useState<Array<{ id: string; name: string }>>([]);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+
+  const isOwner = doc && doc.owner && user && (doc.owner === user.username || doc.owner === user.fullName);
+  const canSubmitForApproval = isOwner || roles.includes('ROLE_ADMIN');
 
   const load = useCallback(() => {
     setIsLoading(true);
     setError(null);
-    Promise.all([kmsApi.documents.getById(docId), kmsApi.documents.getVersions(docId).catch(() => [])])
-      .then(([docData, versionData]) => {
+    Promise.all([
+      kmsApi.documents.getById(docId),
+      kmsApi.documents.getVersions(docId).catch(() => []),
+      kmsApi.documents.getFavoriteStatus(docId).catch(() => ({ favorited: false })),
+    ])
+      .then(([docData, versionData, favData]) => {
         setDoc(docData as ApiDocument);
         setVersions((versionData ?? []) as VersionRow[]);
+        setIsFavorited(favData.favorited);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load document'))
       .finally(() => setIsLoading(false));
@@ -100,6 +119,15 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    kmsApi.admin.listApprovalTemplates()
+      .then((data) => {
+        const active = Array.isArray(data) ? data.filter((t: any) => t.isActive !== false) : [];
+        setApprovalTemplates(active.map((t: any) => ({ id: t.id, name: t.name })));
+      })
+      .catch(() => {});
+  }, []);
 
   // Stream the binary with the bearer token, then render it from a blob URL
   useEffect(() => {
@@ -151,6 +179,48 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
     }
   };
 
+  const handleToggleFavorite = async () => {
+    setFavoriteLoading(true);
+    try {
+      const res = await kmsApi.documents.toggleFavorite(docId);
+      setIsFavorited(res.favorited);
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : 'Could not update favorite status');
+    } finally {
+      setFavoriteLoading(false);
+    }
+  };
+
+  const handleSubmitForApproval = async () => {
+    if (!selectedTemplateId) {
+      setShowTemplatePicker(true);
+      return;
+    }
+    setSubmittingApproval(true);
+    setShowTemplatePicker(false);
+    try {
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`${API_BASE_URL}/admin/approvals/submit`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ documentId: docId, templateId: selectedTemplateId }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || `Submission failed [${res.status}]`);
+      }
+      setStatusMessage('Document submitted for approval successfully.');
+      load();
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : 'Failed to submit for approval');
+    } finally {
+      setSubmittingApproval(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <AppShell>
@@ -181,11 +251,47 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
               <FileText className="w-5 h-5 text-blue-700 shrink-0" />
               <span className="truncate">{title}</span>
+              {doc.status && (
+                <Badge
+                  label={doc.status}
+                  variant={doc.status === 'PUBLISHED' ? 'green' : doc.status === 'UNDER_REVIEW' ? 'amber' : doc.status === 'DRAFT' ? 'slate' : 'slate'}
+                />
+              )}
             </h1>
             <p className="text-[11px] text-kms-slate-500 mt-1 font-mono">{doc.id}</p>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleToggleFavorite}
+              disabled={favoriteLoading}
+              className="p-1.5 rounded hover:bg-kms-slate-100 text-kms-slate-500 hover:text-amber-500 disabled:opacity-50 transition-colors"
+              title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              {favoriteLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Star className={`w-4 h-4 ${isFavorited ? 'fill-amber-500 text-amber-500' : ''}`} />
+              )}
+            </button>
+            {canSubmitForApproval && doc.status !== 'UNDER_REVIEW' && (
+              <Button
+                variant="outline"
+                size="sm"
+                icon={submittingApproval ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                onClick={() => {
+                  if (approvalTemplates.length === 1) {
+                    setSelectedTemplateId(approvalTemplates[0].id);
+                    handleSubmitForApproval();
+                  } else {
+                    setShowTemplatePicker(true);
+                  }
+                }}
+                disabled={submittingApproval}
+              >
+                Submit for Approval
+              </Button>
+            )}
             <Button variant="outline" size="sm" icon={<FileCheck className="w-4 h-4 text-blue-700" />} onClick={handleOpenInDesktopApp}>
               Open in Desktop App
             </Button>
@@ -426,6 +532,45 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
           </div>
         </div>
       </div>
+        {/* Template Picker Modal */}
+        {showTemplatePicker && (
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowTemplatePicker(false)}>
+            <div className="bg-white rounded-lg p-5 shadow-xl max-w-sm w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-sm font-bold text-kms-slate-900">Select Approval Template</h3>
+              <p className="text-xs text-kms-slate-600">Choose which approval workflow to route this document through.</p>
+              {approvalTemplates.length === 0 ? (
+                <p className="text-xs text-red-600">No active approval templates found. Contact an admin to create one.</p>
+              ) : (
+                <div className="space-y-2">
+                  {approvalTemplates.map((t) => (
+                    <label key={t.id} className={`flex items-center gap-3 p-3 border rounded cursor-pointer transition-all ${selectedTemplateId === t.id ? 'border-blue-500 bg-blue-50' : 'border-kms-slate-200 hover:border-blue-300'}`}>
+                      <input
+                        type="radio"
+                        name="template"
+                        value={t.id}
+                        checked={selectedTemplateId === t.id}
+                        onChange={() => setSelectedTemplateId(t.id)}
+                        className="text-blue-600"
+                      />
+                      <span className="text-xs font-medium text-kms-slate-900">{t.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => { setShowTemplatePicker(false); setSelectedTemplateId(''); }}>Cancel</Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!selectedTemplateId || submittingApproval}
+                  onClick={handleSubmitForApproval}
+                >
+                  {submittingApproval ? 'Submitting...' : 'Submit for Approval'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
     </AppShell>
   );
 }

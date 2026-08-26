@@ -12,4 +12,5 @@ import java.util.UUID;
 public interface ApprovalWorkflowRepository extends JpaRepository<ApprovalWorkflow, UUID> {
     Optional<ApprovalWorkflow> findByDocumentId(UUID documentId);
     List<ApprovalWorkflow> findByStatus(String status);
+    List<ApprovalWorkflow> findBySubmittedByIdOrderByCreatedAtDesc(UUID userId);
 }

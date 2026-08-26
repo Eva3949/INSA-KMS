@@ -9,6 +9,7 @@ import { Badge } from '@/src/components/ui/Badge';
 import { LoadingState } from '@/src/components/ui/States';
 import { Alert } from '@/src/components/ui/Alert';
 import { kmsApi } from '@/src/lib/api';
+import { useAuth } from '@/src/lib/auth-context';
 import { Trash2, RotateCcw, FileText, RefreshCw } from 'lucide-react';
 
 interface DeletedRow {
@@ -28,6 +29,9 @@ function formatDate(iso?: string): string {
 }
 
 export default function RecycleBinPage() {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes('ROLE_ADMIN');
+
   const [rows, setRows] = React.useState<DeletedRow[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isBusy, setIsBusy] = React.useState(false);
@@ -148,9 +152,11 @@ export default function RecycleBinPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="danger" size="sm" onClick={handlePurgeNow} disabled={isBusy}>
-              Purge Expired Now
-            </Button>
+            {isAdmin && (
+              <Button variant="danger" size="sm" onClick={handlePurgeNow} disabled={isBusy}>
+                Purge Expired Now
+              </Button>
+            )}
             <Button variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />} onClick={load}>
               Refresh
             </Button>

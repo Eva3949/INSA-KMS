@@ -7,7 +7,9 @@ import com.enterprise.kms.service.DocumentService;
 import com.enterprise.kms.service.PermissionService;
 import com.enterprise.kms.service.ShareLinkService;
 import com.enterprise.kms.repository.DocumentCommentRepository;
+import com.enterprise.kms.repository.DocumentFavoriteRepository;
 import com.enterprise.kms.repository.DocumentLockRepository;
+import com.enterprise.kms.repository.DocumentShareRepository;
 import com.enterprise.kms.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -30,13 +32,17 @@ public class DocumentController {
     private final DocumentCommentRepository documentCommentRepository;
     private final DocumentLockRepository documentLockRepository;
     private final UserRepository userRepository;
+    private final DocumentFavoriteRepository documentFavoriteRepository;
+    private final DocumentShareRepository documentShareRepository;
 
     public DocumentController(DocumentService documentService, PermissionService permissionService,
                               com.enterprise.kms.service.SystemSettingService systemSettingService,
                               ShareLinkService shareLinkService,
                               DocumentCommentRepository documentCommentRepository,
                               DocumentLockRepository documentLockRepository,
-                              UserRepository userRepository) {
+                              UserRepository userRepository,
+                              DocumentFavoriteRepository documentFavoriteRepository,
+                              DocumentShareRepository documentShareRepository) {
         this.documentService = documentService;
         this.permissionService = permissionService;
         this.systemSettingService = systemSettingService;
@@ -44,6 +50,8 @@ public class DocumentController {
         this.documentCommentRepository = documentCommentRepository;
         this.documentLockRepository = documentLockRepository;
         this.userRepository = userRepository;
+        this.documentFavoriteRepository = documentFavoriteRepository;
+        this.documentShareRepository = documentShareRepository;
     }
 
     @GetMapping("/{id}/metadata")
@@ -318,5 +326,75 @@ public class DocumentController {
                 ? Integer.parseInt(body.get("expiryHours").toString()) : 72;
         String password = body.get("password") != null ? body.get("password").toString() : null;
         return ResponseEntity.ok(shareLinkService.createShareLink(id, username, expiryHours, password));
+    }
+
+    // ===== Favorites (user bookmarking) =====
+
+    @GetMapping("/{id}/favorite/status")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<java.util.Map<String, Object>> getFavoriteStatus(@PathVariable UUID id) {
+        String username = SecurityUtils.getCurrentUsername();
+        com.enterprise.kms.entity.User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.UNAUTHORIZED, "User not found"));
+        boolean isFavorited = documentFavoriteRepository.existsByUserIdAndDocumentId(user.getId(), id);
+        return ResponseEntity.ok(java.util.Map.of("favorited", isFavorited));
+    }
+
+    @PostMapping("/{id}/favorite/toggle")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<java.util.Map<String, Object>> toggleFavorite(@PathVariable UUID id) {
+        String username = SecurityUtils.getCurrentUsername();
+        com.enterprise.kms.entity.User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.UNAUTHORIZED, "User not found"));
+        Document doc = documentService.getDocumentById(id);
+        var existing = documentFavoriteRepository.findByUserIdAndDocumentId(user.getId(), id);
+        if (existing.isPresent()) {
+            documentFavoriteRepository.delete(existing.get());
+            return ResponseEntity.ok(java.util.Map.of("favorited", false));
+        } else {
+            com.enterprise.kms.entity.DocumentFavorite fav = new com.enterprise.kms.entity.DocumentFavorite();
+            fav.setUser(user);
+            fav.setDocument(doc);
+            documentFavoriteRepository.save(fav);
+            return ResponseEntity.ok(java.util.Map.of("favorited", true));
+        }
+    }
+
+    @GetMapping("/favorites")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<java.util.List<java.util.Map<String, Object>>> getMyFavorites() {
+        String username = SecurityUtils.getCurrentUsername();
+        com.enterprise.kms.entity.User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.UNAUTHORIZED, "User not found"));
+        java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
+        for (com.enterprise.kms.entity.DocumentFavorite fav : documentFavoriteRepository.findByUserIdOrderByCreatedAtDesc(user.getId())) {
+            result.add(documentService.toResponse(fav.getDocument()));
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    // ===== Shared With Me =====
+
+    @GetMapping("/shared-with-me")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<java.util.List<java.util.Map<String, Object>>> getSharedWithMe() {
+        String username = SecurityUtils.getCurrentUsername();
+        com.enterprise.kms.entity.User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.UNAUTHORIZED, "User not found"));
+        java.util.List<com.enterprise.kms.entity.DocumentShare> shares =
+                documentShareRepository.findByGrantedToUserId(user.getId());
+        java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
+        for (com.enterprise.kms.entity.DocumentShare share : shares) {
+            java.util.Map<String, Object> row = documentService.toResponse(share.getDocument());
+            row.put("shareId", share.getId());
+            row.put("permissionLevel", share.getPermissionLevel());
+            row.put("sharedAt", share.getCreatedAt());
+            result.add(row);
+        }
+        return ResponseEntity.ok(result);
     }
 }

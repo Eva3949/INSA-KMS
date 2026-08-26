@@ -27,6 +27,10 @@ public class ApprovalWorkflow {
     @JoinColumn(name = "template_id")
     private ApprovalWorkflowTemplate template;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "submitted_by")
+    private User submittedBy;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
@@ -50,6 +54,9 @@ public class ApprovalWorkflow {
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
+
+    public User getSubmittedBy() { return submittedBy; }
+    public void setSubmittedBy(User submittedBy) { this.submittedBy = submittedBy; }
 
     public OffsetDateTime getCompletedAt() { return completedAt; }
     public void setCompletedAt(OffsetDateTime completedAt) { this.completedAt = completedAt; }

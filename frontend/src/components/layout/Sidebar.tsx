@@ -43,6 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
   const mainNav = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard, role: 'ROLE_VIEWER' },
     { href: '/library', label: 'Document Library', icon: Folder, role: 'ROLE_VIEWER' },
+    { href: '/folders', label: 'Folders', icon: Folder, role: 'ROLE_CONTRIBUTOR' },
     { href: '/search', label: 'Advanced Search', icon: Search, role: 'ROLE_VIEWER' },
     { href: '/search/saved', label: 'Saved Searches & Alerts', icon: BookmarkCheck, role: 'ROLE_VIEWER' },
     { href: '/my-documents', label: 'My Documents', icon: User, role: 'ROLE_CONTRIBUTOR' },
@@ -51,6 +52,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
     { href: '/recent', label: 'Recent Documents', icon: Clock, role: 'ROLE_VIEWER' },
     { href: '/recycle-bin', label: 'Recycle Bin', icon: Trash2, role: 'ROLE_CONTRIBUTOR' },
     { href: '/notifications', label: 'Notifications', icon: Bell, role: 'ROLE_VIEWER' },
+    { href: '/my-approvals', label: 'My Submissions', icon: GitPullRequestArrow, role: 'ROLE_CONTRIBUTOR' },
+    { href: '/approvals', label: 'Approval Inbox', icon: GitPullRequestArrow, role: 'ROLE_CONTENT_OWNER' },
     { href: '/profile', label: 'User Profile', icon: User, role: 'ROLE_VIEWER' },
   ];
 
@@ -80,6 +83,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
   const isAdmin = hasRole(userRoles, 'ROLE_ADMIN');
   const [storageUsed, setStorageUsed] = useState<number | null>(null);
   const [storageTotal, setStorageTotal] = useState<number | null>(null);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+useEffect(() => {
+  const token = sessionStorage.getItem('kms_access_token');
+  if (!token) return;
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
+  fetch(`${API_BASE_URL}/notifications/unread-count`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+    .then((res) => res.ok ? res.json() : Promise.reject())
+    .then((data) => {
+      const count = typeof data === 'number' ? data : data?.count ?? data?.unreadCount ?? 0;
+      setUnreadCount(count);
+    })
+    .catch(() => {});
+}, []);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -152,6 +171,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
                 >
                   <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-700' : 'text-slate-400'}`} />
                   <span className="truncate">{item.label}</span>
+{item.href === '/notifications' && unreadCount > 0 && (
+  <span className="ml-auto bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+    {unreadCount > 99 ? '99+' : unreadCount}
+  </span>
+)}
                 </Link>
               );
             })}
