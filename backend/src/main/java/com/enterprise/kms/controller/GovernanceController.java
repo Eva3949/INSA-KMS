@@ -150,7 +150,22 @@ public class GovernanceController {
     @GetMapping("/audit-logs")
     @PreAuthorize("hasAnyRole('ROLE_IT_SECURITY', 'ROLE_ADMIN')")
     @AuditLog(action = "AUDIT_LOG_QUERY", resourceType = "AUDIT")
-    public ResponseEntity<Page<AuditLogEntity>> getAuditLogs(Pageable pageable) {
+    public ResponseEntity<Page<AuditLogEntity>> getAuditLogs(
+            Pageable pageable,
+            @RequestParam(name = "action", required = false) String action,
+            @RequestParam(name = "user", required = false) String user,
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+            @RequestParam(name = "from", required = false) java.time.OffsetDateTime from,
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+            @RequestParam(name = "to", required = false) java.time.OffsetDateTime to) {
+        boolean filtered = (action != null && !action.isBlank()) || (user != null && !user.isBlank())
+                || from != null || to != null;
+        if (filtered) {
+            return ResponseEntity.ok(auditLogRepository.findFiltered(
+                    (action != null && !action.isBlank()) ? action : null,
+                    (user != null && !user.isBlank()) ? user : null, from, to,
+                    org.springframework.data.domain.PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())));
+        }
         return ResponseEntity.ok(auditService.getAuditLogs(pageable));
     }
 

@@ -22,11 +22,13 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
   });
 
   if (!response.ok) {
+    // On 401, clear auth state so AuthProvider picks it up on the next cycle.
+    // Do NOT hard-redirect here — AuthProvider handles the redirect cleanly
+    // and avoids competing redirects that cause login loops.
     if (response.status === 401 && typeof window !== 'undefined') {
       sessionStorage.removeItem('kms_access_token');
       sessionStorage.removeItem('kms_refresh_token');
       document.cookie = 'kms_auth_present=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-      window.location.href = '/login';
     }
     const errorText = await response.text();
     throw new Error(`API Error [${response.status}]: ${errorText || response.statusText}`);
@@ -52,6 +54,10 @@ export const kmsApi = {
     list: (page = 0, size = 10) => fetchApi<any>(`/documents?page=${page}&size=${size}`),
     mine: (page = 0, size = 20) => fetchApi<any>(`/documents/mine?page=${page}&size=${size}`),
     recent: (limit = 20) => fetchApi<any[]>(`/documents/recent?limit=${limit}`),
+    recycleBin: () => fetchApi<any[]>(`/documents/recycle-bin?page=0&size=100`),
+    getMetadata: (id: string) => fetchApi<any>(`/documents/${id}/metadata`),
+    putMetadata: (id: string, values: Record<string, string>) =>
+      fetchApi<any>(`/documents/${id}/metadata`, { method: 'PUT', body: JSON.stringify(values) }),
     getById: (id: string) => fetchApi<any>(`/documents/${id}`),
     upload: async (formData: FormData) => {
       const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
@@ -217,6 +223,20 @@ export const kmsApi = {
 
     // Document types (FR-06)
     getDocumentTypes: () => fetchApi<any[]>('/admin/document-types'),
+    listTypeFields: (typeId: string) => fetchApi<any[]>(`/admin/document-types/${typeId}/fields`),
+    createTypeField: (typeId: string, payload: { fieldKey: string; label?: string; dataType?: string; required?: boolean }) =>
+      fetchApi<any>(`/admin/document-types/${typeId}/fields`, { method: 'POST', body: JSON.stringify(payload) }),
+    deleteTypeField: (typeId: string, fieldId: string) =>
+      fetchApi<void>(`/admin/document-types/${typeId}/fields/${fieldId}`, { method: 'DELETE' }),
+
+    // Approval workflow templates (FR-25)
+    listApprovalTemplates: () => fetchApi<any[]>('/admin/approval-templates'),
+    createApprovalTemplate: (payload: { name: string; description?: string; documentTypeId?: string; isActive?: boolean; approverIds: string[] }) =>
+      fetchApi<any>('/admin/approval-templates', { method: 'POST', body: JSON.stringify(payload) }),
+    updateApprovalTemplate: (id: string, payload: Record<string, unknown>) =>
+      fetchApi<any>(`/admin/approval-templates/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteApprovalTemplate: (id: string) => fetchApi<void>(`/admin/approval-templates/${id}`, { method: 'DELETE' }),
+
     createDocumentType: (payload: { name: string; description?: string }) =>
       fetchApi<any>('/admin/document-types', { method: 'POST', body: JSON.stringify(payload) }),
     updateDocumentType: (id: string, payload: { name?: string; description?: string }) =>
@@ -233,6 +253,16 @@ export const kmsApi = {
 
     // Groups (FR-27)
     getGroups: () => fetchApi<any[]>('/admin/groups'),
+    createGroup: (payload: { name: string; departmentId?: string }) =>
+      fetchApi<any>('/admin/groups', { method: 'POST', body: JSON.stringify(payload) }),
+    updateGroup: (id: string, payload: { name?: string; departmentId?: string }) =>
+      fetchApi<any>(`/admin/groups/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteGroup: (id: string) => fetchApi<void>(`/admin/groups/${id}`, { method: 'DELETE' }),
+    listGroupMembers: (id: string) => fetchApi<any[]>(`/admin/groups/${id}/members`),
+    addGroupMember: (id: string, userId: string) =>
+      fetchApi<void>(`/admin/groups/${id}/members`, { method: 'POST', body: JSON.stringify({ userId }) }),
+    removeGroupMember: (id: string, userId: string) =>
+      fetchApi<void>(`/admin/groups/${id}/members/${userId}`, { method: 'DELETE' }),
 
     // System configuration (FR-27)
     getSettings: () => fetchApi<any[]>('/admin/settings'),
@@ -249,7 +279,31 @@ export const kmsApi = {
     getStorageObjects: (limit = 50) => fetchApi<any[]>(`/admin/storage/objects?limit=${limit}`),
 
     // IT security monitoring (FR-22)
-    getSecurityEvents: (page = 0, size = 25) => fetchApi<any>(`/admin/security/events?page=${page}&size=${size}`),
+    getSecurityEvents: (page = 0, size = 25, filters?: { action?: string; user?: string; from?: string; to?: string }) => {
+      const params = new URLSearchParams({ page: String(page), size: String(size) });
+      if (filters?.action) params.set('action', filters.action);
+      if (filters?.user) params.set('user', filters.user);
+      if (filters?.from) params.set('from', filters.from);
+      if (filters?.to) params.set('to', filters.to);
+      return fetchApi<any>(`/admin/security/events?${params.toString()}`);
+    },
+    forwardToSiem: () => fetchApi<{ status: string; forwarded?: number; watermark?: string; hint?: string }>(
+      '/admin/security/siem/forward', { method: 'POST' }),
+    sendTestEmail: (to: string) =>
+      fetchApi<{ status: string; detail?: string }>('/admin/mail/test', { method: 'POST', body: JSON.stringify({ to }) }),
+    getBackupStatus: () => fetchApi<{
+      databaseName: string;
+      databaseSizePretty: string;
+      databaseSizeBytes: number;
+      documentCount: number;
+      lastBackupAt: string;
+      backupLocation: string;
+      backupScript: string;
+    }>('/admin/backup/status'),
+    getOcrJobs: (limit = 50) => fetchApi<{ pendingCount: number; jobs: any[] }>(`/admin/ocr/jobs?limit=${limit}`),
+    purgeRecycleBin: (days?: number) =>
+      fetchApi<{ purged: number; skippedOnLegalHold: number; retentionDays: number }>(
+        `/admin/recycle-bin/purge${days ? `?days=${days}` : ''}`, { method: 'POST' }),
 
     // Reports (FR-30 / FR-31)
     getStorageGrowthReport: (months = 12) => fetchApi<any>(`/admin/reports/storage-growth?months=${months}`),

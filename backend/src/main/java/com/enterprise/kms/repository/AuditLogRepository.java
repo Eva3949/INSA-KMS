@@ -24,4 +24,25 @@ public interface AuditLogRepository extends JpaRepository<AuditLogEntity, UUID> 
                    "GROUP BY user_id ORDER BY action_count DESC LIMIT :limit",
            nativeQuery = true)
     List<Object[]> findActiveUsers(@Param("since") OffsetDateTime since, @Param("limit") int limit);
+    /**
+     * Filtered audit query (FR-22). Any filter may be null. Sorting is fixed to
+     * newest-first because Spring Data does not append ORDER BY to native queries.
+     */
+    @Query(value = "SELECT * FROM audit_logs al WHERE " +
+                   "(:action IS NULL OR al.action = :action) AND " +
+                   "(:userText IS NULL OR al.user_id ILIKE '%' || :userText || '%' OR al.user_email ILIKE '%' || :userText || '%') AND " +
+                   "(CAST(:fromTs AS timestamptz) IS NULL OR al.created_at >= :fromTs) AND " +
+                   "(CAST(:toTs AS timestamptz) IS NULL OR al.created_at <= :toTs) " +
+                   "ORDER BY al.created_at DESC",
+           countQuery = "SELECT COUNT(*) FROM audit_logs al WHERE " +
+                   "(:action IS NULL OR al.action = :action) AND " +
+                   "(:userText IS NULL OR al.user_id ILIKE '%' || :userText || '%' OR al.user_email ILIKE '%' || :userText || '%') AND " +
+                   "(CAST(:fromTs AS timestamptz) IS NULL OR al.created_at >= :fromTs) AND " +
+                   "(CAST(:toTs AS timestamptz) IS NULL OR al.created_at <= :toTs)",
+           nativeQuery = true)
+    Page<AuditLogEntity> findFiltered(@Param("action") String action,
+                                      @Param("userText") String userText,
+                                      @Param("fromTs") OffsetDateTime fromTs,
+                                      @Param("toTs") OffsetDateTime toTs,
+                                      Pageable pageable);
 }

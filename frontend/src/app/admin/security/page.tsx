@@ -4,13 +4,15 @@ import React from 'react';
 import { AppShell } from '@/src/components/layout/AppShell';
 import { Breadcrumb } from '@/src/components/ui/Breadcrumb';
 import { Button } from '@/src/components/ui/Button';
+import { Card } from '@/src/components/ui/Card';
 import { Table } from '@/src/components/ui/Table';
 import { Badge } from '@/src/components/ui/Badge';
 import { Pagination } from '@/src/components/ui/Pagination';
 import { LoadingState } from '@/src/components/ui/States';
+import { Input } from '@/src/components/ui/Input';
 import { Alert } from '@/src/components/ui/Alert';
 import { kmsApi } from '@/src/lib/api';
-import { ShieldAlert, RefreshCw, Download } from 'lucide-react';
+import { ShieldAlert, RefreshCw, Download, Send } from 'lucide-react';
 
 interface AuditEvent {
   id: string;
@@ -37,14 +39,19 @@ export default function AdminSecurityPage() {
   const [page, setPage] = React.useState(0);
   const [totalPages, setTotalPages] = React.useState(1);
   const [totalElements, setTotalElements] = React.useState(0);
+  const [filterAction, setFilterAction] = React.useState('');
+  const [filterUser, setFilterUser] = React.useState('');
+  const [filterFrom, setFilterFrom] = React.useState('');
+  const [filterTo, setFilterTo] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [siemStatus, setSiemStatus] = React.useState<string | null>(null);
 
   const load = React.useCallback((targetPage: number) => {
     setIsLoading(true);
     setError(null);
     kmsApi.admin
-      .getSecurityEvents(targetPage, 25)
+      .getSecurityEvents(targetPage, 25, { action: filterAction || undefined, user: filterUser || undefined, from: filterFrom ? new Date(filterFrom).toISOString() : undefined, to: filterTo ? new Date(filterTo).toISOString() : undefined })
       .then((data: any) => {
         setEvents((data?.content ?? []) as AuditEvent[]);
         setTotalPages(data?.totalPages ?? 1);
@@ -76,6 +83,24 @@ export default function AdminSecurityPage() {
         window.URL.revokeObjectURL(url);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Export failed'));
+  };
+
+  const handleForwardToSiem = () => {
+    setSiemStatus('sending');
+    setError(null);
+    kmsApi.admin
+      .forwardToSiem()
+      .then((data) => {
+        setSiemStatus('sent');
+        if (data.forwarded) {
+          setSiemStatus(`sent — ${data.forwarded} events forwarded`);
+        }
+        setTimeout(() => setSiemStatus(null), 5000);
+      })
+      .catch((err: unknown) => {
+        setSiemStatus(null);
+        setError(err instanceof Error ? err.message : 'SIEM forward failed');
+      });
   };
 
   const columns = [
@@ -143,6 +168,15 @@ export default function AdminSecurityPage() {
             <Button variant="outline" size="sm" icon={<Download className="w-4 h-4" />} onClick={handleExport}>
               Export CSV (SIEM)
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Send className="w-4 h-4" />}
+              onClick={handleForwardToSiem}
+              disabled={siemStatus === 'sending'}
+            >
+              {siemStatus === 'sending' ? 'Forwarding...' : siemStatus ? siemStatus : 'Forward to SIEM'}
+            </Button>
             <Button variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />} onClick={() => load(page)}>
               Refresh
             </Button>
@@ -150,6 +184,15 @@ export default function AdminSecurityPage() {
         </div>
 
         {error && <Alert type="error">{error}</Alert>}
+
+        <Card title="Filter Audit Events (FR-22)">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+            <Input label="Action" placeholder="e.g. DOCUMENT_DOWNLOAD" value={filterAction} onChange={(e) => { setFilterAction(e.target.value); setPage(0); }} />
+            <Input label="User (id or email)" placeholder="e.g. admin" value={filterUser} onChange={(e) => { setFilterUser(e.target.value); setPage(0); }} />
+            <Input label="From" type="date" value={filterFrom} onChange={(e) => { setFilterFrom(e.target.value); setPage(0); }} />
+            <Input label="To" type="date" value={filterTo} onChange={(e) => { setFilterTo(e.target.value); setPage(0); }} />
+          </div>
+        </Card>
 
         {isLoading ? (
           <LoadingState message="Loading security events..." />

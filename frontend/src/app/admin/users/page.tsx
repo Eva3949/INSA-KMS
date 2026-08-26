@@ -19,6 +19,7 @@ import {
   Trash2,
   Shield,
   ShieldCheck,
+  KeyRound,
   CheckCircle2,
   AlertCircle
 } from 'lucide-react';
@@ -54,6 +55,7 @@ export default function AdminUsersPage() {
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
 
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
 
@@ -62,6 +64,8 @@ export default function AdminUsersPage() {
   const [formEmail, setFormEmail] = useState('');
   const [formRole, setFormRole] = useState('ROLE_VIEWER');
   const [formTempPassword, setFormTempPassword] = useState('');
+  const [formResetPassword, setFormResetPassword] = useState('');
+  const [formResetTemporary, setFormResetTemporary] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
@@ -247,6 +251,48 @@ export default function AdminUsersPage() {
     setIsDeleteOpen(true);
   };
 
+  const openResetPasswordModal = (user: UserItem) => {
+    setSelectedUser(user);
+    setFormResetPassword('');
+    setFormResetTemporary(true);
+    setIsResetPasswordOpen(true);
+  };
+
+  // Reset Password Handler
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser || !formResetPassword) return;
+
+    setIsSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/reset-password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionStorage.getItem('kms_access_token') || ''}`,
+        },
+        body: JSON.stringify({
+          password: formResetPassword,
+          temporary: String(formResetTemporary),
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        showNotification('success', data.message || `Password reset for '${selectedUser.username}'`);
+        setIsResetPasswordOpen(false);
+        setFormResetPassword('');
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showNotification('error', errData.message || 'Failed to reset password');
+      }
+    } catch (err) {
+      showNotification('error', 'Network error while resetting password');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const columns = [
     {
       header: 'Username',
@@ -309,6 +355,13 @@ export default function AdminUsersPage() {
             }
             onClick={() => toggleUserStatus(u)}
             title={u.isActive !== false ? 'Deactivate User' : 'Activate User'}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<KeyRound className="w-3.5 h-3.5 text-violet-600" />}
+            onClick={() => openResetPasswordModal(u)}
+            title="Reset Password"
           />
           <Button
             size="sm"
@@ -617,6 +670,56 @@ export default function AdminUsersPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* RESET PASSWORD MODAL */}
+      <Modal
+        isOpen={isResetPasswordOpen}
+        onClose={() => setIsResetPasswordOpen(false)}
+        title="Reset User Password (Keycloak)"
+      >
+        <form onSubmit={handleResetPassword} className="space-y-4 pt-2">
+          {selectedUser && (
+            <div className="p-3 bg-violet-50 border border-violet-200 rounded-md text-violet-900 text-xs">
+              <p className="font-semibold mb-1">Reset password for: {selectedUser.username}</p>
+              <p>This will update the Keycloak credential for <strong>{selectedUser.email}</strong>.</p>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-kms-slate-700 mb-1">New Password *</label>
+            <input
+              type="text"
+              required
+              placeholder="min. 8 characters"
+              value={formResetPassword}
+              onChange={(e) => setFormResetPassword(e.target.value)}
+              className="w-full px-3 py-1.5 text-xs border border-kms-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="reset-temporary"
+              checked={formResetTemporary}
+              onChange={(e) => setFormResetTemporary(e.target.checked)}
+              className="w-4 h-4 rounded border-kms-slate-300"
+            />
+            <label htmlFor="reset-temporary" className="text-xs text-kms-slate-700 font-medium">
+              Temporary — user must change at next login
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-kms-slate-200">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsResetPasswordOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={isSubmitting}>
+              {isSubmitting ? 'Resetting...' : 'Reset Password'}
+            </Button>
+          </div>
+        </form>
       </Modal>
     </AppShell>
   );

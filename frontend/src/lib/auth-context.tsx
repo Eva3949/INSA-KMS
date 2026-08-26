@@ -47,8 +47,71 @@ function getStoredToken(): string | null {
   return sessionStorage.getItem('kms_access_token');
 }
 
+function getStoredRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem('kms_refresh_token');
+}
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
+
+const KEYCLOAK_URL =
+  process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
+const REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'kms-realm';
+const CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'kms-frontend-client';
+
+/**
+ * Attempt to silently refresh the access token using the stored refresh token.
+ * Returns the new access token on success, or null on failure.
+ */
+async function tryRefreshToken(): Promise<string | null> {
+  const refreshToken = getStoredRefreshToken();
+  if (!refreshToken) return null;
+
+  try {
+    const res = await fetch(
+      `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: CLIENT_ID,
+          refresh_token: refreshToken,
+        }),
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.access_token) {
+      sessionStorage.setItem('kms_access_token', data.access_token);
+      if (data.refresh_token) {
+        sessionStorage.setItem('kms_refresh_token', data.refresh_token);
+      }
+      return data.access_token;
+    }
+  } catch {
+    // network error etc. — give up
+  }
+  return null;
+}
+
+/**
+ * Try to get a valid token, refreshing silently if the current one is expired.
+ * Returns null if no valid token can be obtained.
+ */
+async function getValidToken(): Promise<string | null> {
+  let token = getStoredToken();
+  if (token) return token;
+
+  // Token missing — try refresh
+  const refreshed = await tryRefreshToken();
+  if (refreshed) return refreshed;
+
+  return null;
+}
+
+const API_AUTH_ERROR_KEY = '__kms_auth_error_ts';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -57,7 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isMounted = useRef(true);
 
   const fetchUser = useCallback(async () => {
-    const token = getStoredToken();
+    const token = await getValidToken();
     if (!token) {
       if (isMounted.current) setIsLoading(false);
       return;
@@ -69,12 +132,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (res.status === 401) {
+        // Current token is rejected — try one silent refresh before giving up
+        const refreshed = await tryRefreshToken();
+        if (refreshed) {
+          const retry = await fetch(`${API_BASE_URL}/users/me`, {
+            headers: { Authorization: `Bearer ${refreshed}` },
+          });
+          if (retry.ok) {
+            const data = await retry.json();
+            if (isMounted.current) {
+              setUser({
+                id: data.id,
+                username: data.username,
+                email: data.email,
+                fullName: data.fullName || data.username,
+                department: data.department,
+                roles: (data.roles || []) as UserRole[],
+              });
+              setIsLoading(false);
+            }
+            return;
+          }
+        }
+        // Truly unauthenticated — clear state, let AppShell handle the redirect
         sessionStorage.removeItem('kms_access_token');
+        sessionStorage.removeItem('kms_refresh_token');
+        document.cookie = 'kms_auth_present=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
         if (isMounted.current) {
           setUser(null);
           setIsLoading(false);
         }
-        router.replace('/login');
         return;
       }
 
@@ -103,7 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       }
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     isMounted.current = true;
@@ -114,16 +201,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchUser]);
 
   const logout = useCallback(() => {
-    // Clear all local session data — no redirect to Keycloak logout page
     sessionStorage.removeItem('kms_access_token');
     sessionStorage.removeItem('kms_refresh_token');
     setUser(null);
-    // Clear the middleware auth signal cookie
     document.cookie = 'kms_auth_present=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    // Redirect directly to login page — Keycloak UI never opens
     window.location.href = '/login';
   }, []);
 
+  // --- Redirect to /login when not authenticated, with loop guard ---
+  useEffect(() => {
+    if (isLoading || user !== null) return;
+
+    // Only redirect once per "session failed" event to avoid infinite loops.
+    // If we already redirected less than 2 seconds ago, stop.
+    const lastRedirect = sessionStorage.getItem(API_AUTH_ERROR_KEY);
+    const now = Date.now();
+    if (lastRedirect && now - Number(lastRedirect) < 2000) {
+      // Too many redirects — clear the guard and stop the loop
+      sessionStorage.removeItem(API_AUTH_ERROR_KEY);
+      return;
+    }
+    sessionStorage.setItem(API_AUTH_ERROR_KEY, String(now));
+    router.replace('/login');
+  }, [isLoading, user, router]);
 
   const value: AuthContextValue = {
     user,

@@ -29,9 +29,9 @@ export const AppShell: React.FC<AppShellProps> = ({ children, requiredRole }) =>
     );
   }
 
-  // If not authenticated, redirect to login (belt-and-suspenders beyond middleware)
+  // Auth redirect is handled centrally by AuthProvider (with loop guard).
+  // Just hide the shell until the redirect completes.
   if (!isAuthenticated) {
-    router.replace('/login');
     return null;
   }
 

@@ -7,6 +7,7 @@ import com.enterprise.kms.repository.DepartmentRepository;
 import com.enterprise.kms.repository.DocumentRepository;
 import com.enterprise.kms.repository.DocumentTypeRepository;
 import com.enterprise.kms.repository.FolderRepository;
+import com.enterprise.kms.repository.GroupRepository;
 import com.enterprise.kms.repository.TagRepository;
 import com.enterprise.kms.repository.UserRepository;
 import jakarta.persistence.EntityManager;
@@ -32,6 +33,9 @@ public class AdminCatalogService {
     private final DocumentRepository documentRepository;
     private final FolderRepository folderRepository;
     private final UserRepository userRepository;
+    private final GroupRepository groupRepository;
+    private final com.enterprise.kms.repository.DocumentTypeFieldRepository documentTypeFieldRepository;
+    private final com.enterprise.kms.service.StorageService storageService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -41,13 +45,19 @@ public class AdminCatalogService {
                                TagRepository tagRepository,
                                DocumentRepository documentRepository,
                                FolderRepository folderRepository,
-                               UserRepository userRepository) {
+                               UserRepository userRepository,
+                           GroupRepository groupRepository,
+                           com.enterprise.kms.repository.DocumentTypeFieldRepository documentTypeFieldRepository,
+                           com.enterprise.kms.service.StorageService storageService) {
         this.departmentRepository = departmentRepository;
         this.documentTypeRepository = documentTypeRepository;
         this.tagRepository = tagRepository;
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
         this.userRepository = userRepository;
+        this.groupRepository = groupRepository;
+        this.documentTypeFieldRepository = documentTypeFieldRepository;
+        this.storageService = storageService;
     }
 
     // ---------- Departments (FR-27 storage quotas) ----------
@@ -247,6 +257,246 @@ public class AdminCatalogService {
         tagRepository.delete(tag);
     }
 
+    // ---------- Groups management (FR-27) ----------
+
+    @Transactional
+    public Map<String, Object> createGroup(String name, UUID departmentId) {
+        if (name == null || name.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Group name is required");
+        }
+        if (groupRepository.findByName(name.trim()).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A group with this name already exists");
+        }
+        com.enterprise.kms.entity.Group group = new com.enterprise.kms.entity.Group();
+        group.setName(name.trim());
+        if (departmentId != null) {
+            Department dept = departmentRepository.findById(departmentId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Department not found"));
+            group.setDepartment(dept);
+        }
+        groupRepository.save(group);
+        return getGroupDetail(group.getId());
+    }
+
+    @Transactional
+    public Map<String, Object> updateGroup(UUID groupId, String name, UUID departmentId) {
+        com.enterprise.kms.entity.Group group = requireGroup(groupId);
+        if (name != null && !name.isBlank()) {
+            if (!group.getName().equals(name.trim()) && groupRepository.findByName(name.trim()).isPresent()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "A group with this name already exists");
+            }
+            group.setName(name.trim());
+        }
+        if (departmentId != null) {
+            Department dept = departmentRepository.findById(departmentId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Department not found"));
+            group.setDepartment(dept);
+        }
+        groupRepository.save(group);
+        return getGroupDetail(groupId);
+    }
+
+    @Transactional
+    public void deleteGroup(UUID groupId) {
+        requireGroup(groupId);
+        entityManager.createNativeQuery("DELETE FROM user_groups WHERE group_id = :gid")
+                .setParameter("gid", groupId)
+                .executeUpdate();
+        entityManager.createNativeQuery("DELETE FROM folder_permissions WHERE subject_type = 'GROUP' AND subject_id = :sid")
+                .setParameter("sid", groupId.toString())
+                .executeUpdate();
+        entityManager.createNativeQuery("DELETE FROM document_permissions WHERE subject_type = 'GROUP' AND subject_id = :sid")
+                .setParameter("sid", groupId.toString())
+                .executeUpdate();
+        groupRepository.deleteById(groupId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> listMembers(UUID groupId) {
+        requireGroup(groupId);
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = entityManager.createNativeQuery(
+                        "SELECT u.id, u.username, u.email, u.is_active, u.role_name " +
+                        "FROM users u JOIN user_groups ug ON ug.user_id = u.id " +
+                        "WHERE ug.group_id = :gid ORDER BY u.username")
+                .setParameter("gid", groupId)
+                .getResultList();
+        List<Map<String, Object>> members = new ArrayList<>();
+        for (Object[] r : rows) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", r[0].toString());
+            row.put("username", r[1]);
+            row.put("email", r[2]);
+            row.put("active", ((Number) r[3]).intValue() == 1);
+            row.put("roleName", r[4] != null ? r[4].toString() : null);
+            members.add(row);
+        }
+        return members;
+    }
+
+    @Transactional
+    public void addMember(UUID groupId, UUID userId) {
+        requireGroup(groupId);
+        userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        Number existing = (Number) entityManager.createNativeQuery(
+                        "SELECT COUNT(*) FROM user_groups WHERE user_id = :uid AND group_id = :gid")
+                .setParameter("uid", userId)
+                .setParameter("gid", groupId)
+                .getSingleResult();
+        if (existing.longValue() > 0) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "User is already a member of this group");
+        }
+        entityManager.createNativeQuery("INSERT INTO user_groups (user_id, group_id) VALUES (:uid, :gid)")
+                .setParameter("uid", userId)
+                .setParameter("gid", groupId)
+                .executeUpdate();
+    }
+
+    @Transactional
+    public void removeMember(UUID groupId, UUID userId) {
+        requireGroup(groupId);
+        int updated = entityManager.createNativeQuery(
+                        "DELETE FROM user_groups WHERE user_id = :uid AND group_id = :gid")
+                .setParameter("uid", userId)
+                .setParameter("gid", groupId)
+                .executeUpdate();
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User is not a member of this group");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getGroupDetail(UUID groupId) {
+        com.enterprise.kms.entity.Group group = requireGroup(groupId);
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", group.getId());
+        row.put("name", group.getName());
+        row.put("department", group.getDepartment() != null ? group.getDepartment().getName() : "-");
+        Number count = (Number) entityManager.createNativeQuery(
+                        "SELECT COUNT(*) FROM user_groups WHERE group_id = :gid")
+                .setParameter("gid", groupId)
+                .getSingleResult();
+        row.put("memberCount", count.longValue());
+        return row;
+    }
+
+    private com.enterprise.kms.entity.Group requireGroup(UUID groupId) {
+        return groupRepository.findById(groupId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Group not found"));
+    }
+
+    // ---------- Custom metadata field definitions (FR-06 schema builder) ----------
+
+    @Transactional(readOnly = true)
+    public List<com.enterprise.kms.entity.DocumentTypeField> listTypeFields(UUID documentTypeId) {
+        requireDocType(documentTypeId);
+        return documentTypeFieldRepository.findByDocumentTypeIdOrderByCreatedAtAsc(documentTypeId);
+    }
+
+    @Transactional
+    public Map<String, Object> createTypeField(UUID documentTypeId, String fieldKey, String label,
+                                               String dataType, boolean required) {
+        com.enterprise.kms.entity.DocumentType type = requireDocType(documentTypeId);
+        if (fieldKey == null || fieldKey.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "fieldKey is required");
+        }
+        String key = fieldKey.trim();
+        if (!key.matches("[a-zA-Z0-9_\\-]+")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "fieldKey may only contain letters, digits, underscores and hyphens");
+        }
+        String dtype = dataType != null ? dataType.toUpperCase() : "TEXT";
+        if (!List.of("TEXT", "NUMBER", "DATE", "BOOLEAN").contains(dtype)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "dataType must be TEXT, NUMBER, DATE or BOOLEAN");
+        }
+        if (documentTypeFieldRepository.existsByDocumentTypeIdAndFieldKey(documentTypeId, key)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This field already exists for the document type");
+        }
+        com.enterprise.kms.entity.DocumentTypeField field = new com.enterprise.kms.entity.DocumentTypeField();
+        field.setDocumentType(type);
+        field.setFieldKey(key);
+        field.setLabel(label != null && !label.isBlank() ? label.trim() : key);
+        field.setDataType(dtype);
+        field.setIsRequired(required);
+        field = documentTypeFieldRepository.save(field);
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", field.getId());
+        row.put("fieldKey", field.getFieldKey());
+        row.put("label", field.getLabel());
+        row.put("dataType", field.getDataType());
+        row.put("required", field.getIsRequired());
+        return row;
+    }
+
+    @Transactional
+    public Map<String, Object> updateTypeField(UUID fieldId, String label, String dataType, Boolean required) {
+        com.enterprise.kms.entity.DocumentTypeField field = documentTypeFieldRepository.findById(fieldId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Field not found"));
+        if (label != null && !label.isBlank()) {
+            field.setLabel(label.trim());
+        }
+        if (dataType != null && !dataType.isBlank()) {
+            String dtype = dataType.toUpperCase();
+            if (!List.of("TEXT", "NUMBER", "DATE", "BOOLEAN").contains(dtype)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "dataType must be TEXT, NUMBER, DATE or BOOLEAN");
+            }
+            field.setDataType(dtype);
+        }
+        if (required != null) {
+            field.setIsRequired(required);
+        }
+        field = documentTypeFieldRepository.save(field);
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", field.getId());
+        row.put("fieldKey", field.getFieldKey());
+        row.put("label", field.getLabel());
+        row.put("dataType", field.getDataType());
+        row.put("required", field.getIsRequired());
+        return row;
+    }
+
+    @Transactional
+    public void deleteTypeField(UUID fieldId) {
+        if (!documentTypeFieldRepository.existsById(fieldId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Field not found");
+        }
+        documentTypeFieldRepository.deleteById(fieldId);
+    }
+
+    private com.enterprise.kms.entity.DocumentType requireDocType(UUID id) {
+        return documentTypeRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document type not found"));
+    }
+
+    // ---------- Backup & durability status (NFR-06) ----------
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getEncryptionStatus() {
+        return storageService.getEncryptionStatus();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getBackupStatus(com.enterprise.kms.service.SystemSettingService settings) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        List<Object[]> dbInfo = entityManager.createNativeQuery(
+                "SELECT current_database(), pg_size_pretty(pg_database_size(current_database())), " +
+                "pg_database_size(current_database())")
+                .getResultList();
+        if (!dbInfo.isEmpty()) {
+            Object[] info = (Object[]) dbInfo.get(0);
+            row.put("databaseName", info[0]);
+            row.put("databaseSizePretty", info[1]);
+            row.put("databaseSizeBytes", ((Number) info[2]).longValue());
+        }
+        row.put("documentCount", documentRepository.count());
+        row.put("lastBackupAt", settings.getSettingValue("backup.last-run-at", ""));
+        row.put("backupLocation", settings.getSettingValue("backup.location", "./backups"));
+        row.put("backupScript", "scripts/backup-database.ps1");
+        return row;
+    }
     // ---------- Groups (FR-27 user groups, Keycloak-synced) ----------
 
     @Transactional(readOnly = true)

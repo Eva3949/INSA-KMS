@@ -78,8 +78,10 @@ public class ReportsService {
     public List<Map<String, Object>> getStaleOrOrphanedContent(int days, int limit) {
         OffsetDateTime cutoff = OffsetDateTime.now().minusDays(Math.max(1, days));
         List<Object[]> data = documentRepository.findStaleOrOrphanedContent(cutoff, limit);
+        java.util.Set<String> seenIds = new java.util.HashSet<>();
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Object[] r : data) {
+            seenIds.add(r[0].toString());
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("documentId", r[0]);
             row.put("title", r[1]);
@@ -87,8 +89,28 @@ public class ReportsService {
             row.put("ownerEmail", r[3]);
             row.put("department", r[4]);
             row.put("confidentialityLevel", r[5]);
-            row.put("orphaned", !((Boolean) r[6]));
+            boolean orphaned = !((Boolean) r[6]);
+            row.put("orphaned", orphaned);
+            row.put("reason", orphaned ? "ORPHANED_OWNER" : "STALE_ACCESS");
             row.put("lastActivity", r[7]);
+            rows.add(row);
+        }
+
+        // FR-31 third signal: expired review dates
+        for (Object[] r : documentRepository.findReviewOverdueDocuments(limit)) {
+            String docId = r[0].toString();
+            if (seenIds.contains(docId)) { continue; }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("documentId", r[0]);
+            row.put("title", r[1]);
+            row.put("owner", r[2]);
+            row.put("ownerEmail", r[3]);
+            row.put("department", r[4]);
+            row.put("confidentialityLevel", r[5]);
+            row.put("orphaned", false);
+            row.put("reason", "REVIEW_OVERDUE");
+            row.put("reviewOverdueSince", r[6] != null ? r[6].toString() : null);
+            row.put("lastActivity", null);
             rows.add(row);
         }
         return rows;

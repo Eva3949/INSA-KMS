@@ -30,6 +30,16 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
+  # Section 7 email integration - disabled until SMTP is configured (KMS_SMTP_HOST empty).
+  mail:
+    host: ${KMS_SMTP_HOST:}
+    port: ${KMS_SMTP_PORT:587}
+    username: ${KMS_SMTP_USERNAME:}
+    password: ${KMS_SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: ${KMS_SMTP_STARTTLS:true}
+
   flyway:
     enabled: true
     baseline-on-migrate: true

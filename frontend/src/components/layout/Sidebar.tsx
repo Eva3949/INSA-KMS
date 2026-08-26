@@ -22,7 +22,11 @@ import {
   Tag,
   FileCheck2,
   BookmarkCheck,
-  ShieldAlert
+  ShieldAlert,
+  UsersRound,
+  KeyRound,
+  GitPullRequestArrow,
+  ScanLine
 } from 'lucide-react';
 import { UserRole, hasRole } from '@/src/lib/auth';
 import { AuthUser } from '@/src/lib/auth-context';
@@ -59,14 +63,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
   const adminNav = [
     { href: '/admin', label: 'Admin Dashboard', icon: Settings, role: 'ROLE_ADMIN' },
     { href: '/admin/users', label: 'Users & Groups', icon: Users, role: 'ROLE_ADMIN' },
+{ href: '/admin/groups', label: 'Groups & Membership', icon: UsersRound, role: 'ROLE_ADMIN' },
     { href: '/admin/roles', label: 'Roles & Matrix', icon: ShieldCheck, role: 'ROLE_ADMIN' },
+{ href: '/admin/permissions', label: 'Access Control', icon: KeyRound, role: 'ROLE_ADMIN' },
     { href: '/admin/departments', label: 'Departments & Quotas', icon: BarChart2, role: 'ROLE_ADMIN' },
     { href: '/admin/document-types', label: 'Document Types', icon: FileCheck2, role: 'ROLE_ADMIN' },
     { href: '/admin/taxonomy', label: 'Taxonomy & Tags', icon: Tag, role: 'ROLE_ADMIN' },
     { href: '/admin/storage', label: 'Storage & Integrity', icon: HardDrive, role: 'ROLE_ADMIN' },
+    { href: '/admin/ocr', label: 'OCR Queue', icon: ScanLine, role: 'ROLE_ADMIN' },
     { href: '/admin/reports', label: 'Usage & Stale Reports', icon: BarChart2, role: 'ROLE_ADMIN' },
     { href: '/admin/security', label: 'Security Alerts', icon: ShieldAlert, role: 'ROLE_IT_SECURITY' },
-    { href: '/admin/settings', label: 'System Settings', icon: Settings, role: 'ROLE_ADMIN' },
+    { href: '/admin/approvals', label: 'Approval Workflows', icon: GitPullRequestArrow, role: 'ROLE_ADMIN' },
+{ href: '/admin/settings', label: 'System Settings', icon: Settings, role: 'ROLE_ADMIN' },
   ];
 
   const isAdmin = hasRole(userRoles, 'ROLE_ADMIN');

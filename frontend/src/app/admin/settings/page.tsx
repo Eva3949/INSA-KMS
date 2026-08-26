@@ -9,7 +9,7 @@ import { Card } from '@/src/components/ui/Card';
 import { LoadingState } from '@/src/components/ui/States';
 import { Alert } from '@/src/components/ui/Alert';
 import { kmsApi } from '@/src/lib/api';
-import { Settings, Save, RotateCcw } from 'lucide-react';
+import { Settings, Save, RotateCcw, Database, Mail } from 'lucide-react';
 
 interface SettingRow {
   settingKey: string;
@@ -28,10 +28,14 @@ export default function AdminSystemSettingsPage() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
+  const [backup, setBackup] = React.useState<any>(null);
+  const [testTo, setTestTo] = React.useState('');
+  const [mailStatus, setMailStatus] = React.useState<string | null>(null);
 
   const load = React.useCallback(() => {
     setIsLoading(true);
     setError(null);
+    kmsApi.admin.getBackupStatus().then(setBackup).catch(() => {});
     kmsApi.admin
       .getSettings()
       .then((data) => {
@@ -149,6 +153,73 @@ export default function AdminSystemSettingsPage() {
               </Card>
             )}
 
+            <Card title="Database Backup & Durability (NFR-06)">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                <div>
+                  <p className="text-slate-500 font-medium flex items-center gap-1.5"><Database className="w-3.5 h-3.5 text-slate-400" /> Database</p>
+                  <p className="font-bold text-slate-900 mt-1">{backup?.databaseName ?? '—'}</p>
+                  <p className="font-mono text-[11px] text-slate-600">{backup?.databaseSizePretty ?? '—'}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">{backup?.documentCount ?? 0} documents indexed</p>
+                </div>
+                <div>
+                  <p className="text-slate-500 font-medium">Last Backup</p>
+                  <p className="font-bold text-slate-900 mt-1 font-mono text-[11px]">
+                    {(() => {
+                      const raw = values['backup.last-run-at'] || backup?.lastBackupAt || '';
+                      return raw ? new Date(raw).toLocaleString() : 'Never recorded';
+                    })()}
+                  </p>
+                  <Input
+                    label="Record backup timestamp"
+                    type="datetime-local"
+                    value={values['backup.last-run-at'] ? new Date(values['backup.last-run-at']).toISOString().slice(0, 16) : ''}
+                    onChange={(e) => setValues((prev) => ({ ...prev, 'backup.last-run-at': e.target.value ? new Date(e.target.value).toISOString() : '' }))}
+                  />
+                </div>
+                <div>
+                  <p className="text-slate-500 font-medium">Location & Script</p>
+                  <p className="font-mono text-[11px] text-slate-800 mt-1">{values['backup.location'] || backup?.backupLocation || './backups'}</p>
+                  <p className="font-mono text-[11px] text-slate-600 mt-0.5">{backup?.backupScript ?? 'scripts/backup-database.ps1'}</p>
+                  <Button variant="outline" size="sm" className="mt-2" icon={<RotateCcw className="w-4 h-4" />} onClick={load}>Refresh Status</Button>
+                </div>
+              </div>
+            </Card>
+
+            <Card title="Email Delivery Diagnostics (Section 7)">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div className="md:col-span-2">
+                  <Input
+                    label="Send test email to"
+                    type="email"
+                    placeholder="you@enterprise.internal"
+                    value={testTo}
+                    onChange={(e) => setTestTo(e.target.value)}
+                    helperText="Requires KMS_SMTP_HOST environment configuration; otherwise sends are DISABLED and logged."
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={<Mail className="w-4 h-4" />}
+                  disabled={!testTo.trim()}
+                  onClick={async () => {
+                    try {
+                      const result = await kmsApi.admin.sendTestEmail(testTo.trim());
+                      setMailStatus(`${result.status}${result.detail ? ' — ' + result.detail : ''}`);
+                    } catch (err: unknown) {
+                      setMailStatus(err instanceof Error ? err.message : 'Test failed');
+                    }
+                  }}
+                >
+                  Send Test
+                </Button>
+              </div>
+              {mailStatus && (
+                <p className="text-[11px] font-semibold mt-3 text-slate-700 flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-slate-400" /> Result: {mailStatus}
+                </p>
+              )}
+            </Card>
             <p className="text-[11px] text-kms-slate-500">
               Settings are persisted in the <span className="font-mono">system_settings</span> table and audit-logged
               under action <span className="font-mono">SETTINGS_UPDATED</span> (FR-22, FR-27).

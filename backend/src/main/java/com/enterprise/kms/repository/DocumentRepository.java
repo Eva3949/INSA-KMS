@@ -55,6 +55,22 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                    "LIMIT :limit",
            nativeQuery = true)
     List<Object[]> findStaleOrOrphanedContent(@Param("cutoff") OffsetDateTime cutoff, @Param("limit") int limit);
+    /** FR-31: documents whose scheduled review date has passed without completion. */
+    @Query(value = "SELECT d.id, d.title, u.username AS owner, u.email AS owner_email, " +
+                   "dep.name AS department, d.confidentiality_level, " +
+                   "MIN(dr.review_due_date) AS overdue_since " +
+                   "FROM documents d " +
+                   "JOIN users u ON d.author_user_id = u.id " +
+                   "JOIN departments dep ON d.owner_department_id = dep.id " +
+                   "JOIN document_reviews dr ON dr.document_id = d.id AND dr.status = 'PENDING' " +
+                   "WHERE d.is_deleted = false " +
+                   "GROUP BY d.id, d.title, u.username, u.email, dep.name, d.confidentiality_level " +
+                   "HAVING MIN(dr.review_due_date) < CURRENT_DATE " +
+                   "ORDER BY overdue_since ASC LIMIT :limit",
+           nativeQuery = true)
+    List<Object[]> findReviewOverdueDocuments(@Param("limit") int limit);
+    /** FR-08: soft-deleted documents whose recovery window has elapsed. */
+    List<Document> findByIsDeletedTrueAndDeletedAtBeforeAndPurgedAtIsNull(OffsetDateTime deletedAt);
 
     /**
      * documents.status is a PostgreSQL ENUM (document_status_enum), so the value must be
@@ -156,4 +172,99 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                         "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)",
            nativeQuery = true)
     Page<Document> fullTextSearch(@Param("query") String query, Pageable pageable);
+
+    /** FR-12 filtered full-text search: results can be narrowed by type, department, confidentiality, author, date range, tags. */
+    @Query(value = "SELECT d.* FROM documents d " +
+                   "JOIN document_versions dv ON d.current_version_id = dv.id " +
+                   "LEFT JOIN document_types dt ON d.document_type_id = dt.id " +
+                   "LEFT JOIN users u ON d.author_user_id = u.id " +
+                   "LEFT JOIN departments dep ON d.owner_department_id = dep.id " +
+                   "WHERE d.is_deleted = false " +
+                   "AND (:query IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)) " +
+                   "AND (:docTypeId IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
+                   "AND (:deptId IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
+                   "AND (:confidentiality IS NULL OR d.confidentiality_level = :confidentiality) " +
+                   "AND (:authorId IS NULL OR d.author_user_id = CAST(:authorId AS uuid)) " +
+                   "AND (:dateFrom IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
+                   "AND (:dateTo IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
+                   "AND " + ACL_PREDICATE,
+           countQuery = "SELECT count(d.id) FROM documents d " +
+                   "JOIN document_versions dv ON d.current_version_id = dv.id " +
+                   "LEFT JOIN document_types dt ON d.document_type_id = dt.id " +
+                   "LEFT JOIN users u ON d.author_user_id = u.id " +
+                   "LEFT JOIN departments dep ON d.owner_department_id = dep.id " +
+                   "WHERE d.is_deleted = false " +
+                   "AND (:query IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)) " +
+                   "AND (:docTypeId IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
+                   "AND (:deptId IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
+                   "AND (:confidentiality IS NULL OR d.confidentiality_level = :confidentiality) " +
+                   "AND (:authorId IS NULL OR d.author_user_id = CAST(:authorId AS uuid)) " +
+                   "AND (:dateFrom IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
+                   "AND (:dateTo IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
+                   "AND " + ACL_PREDICATE,
+           nativeQuery = true)
+    Page<Document> filteredSearch(@Param("query") String query,
+                                  @Param("docTypeId") String docTypeId,
+                                  @Param("deptId") String deptId,
+                                  @Param("confidentiality") String confidentiality,
+                                  @Param("authorId") String authorId,
+                                  @Param("dateFrom") String dateFrom,
+                                  @Param("dateTo") String dateTo,
+                                  @Param("userId") String userId,
+                                  @Param("roles") String roles,
+                                  @Param("groups") String groups,
+                                  @Param("departmentId") String departmentId,
+                                  @Param("privileged") boolean privileged,
+                                  Pageable pageable);
+
+    /** FR-14 improved ranking: combines ts_rank_cd with recency signal. */
+    @Query(value = "SELECT d.* FROM documents d " +
+                   "JOIN document_versions dv ON d.current_version_id = dv.id " +
+                   "WHERE d.is_deleted = false AND " +
+                   "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
+                   "AND " + ACL_PREDICATE + " " +
+                   "ORDER BY (ts_rank_cd(to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title), plainto_tsquery('english', :query)) * 0.7 " +
+                   "+ (1.0 / (1.0 + extract(epoch from (NOW() - d.updated_at)) / 86400.0)) * 0.3) DESC",
+           countQuery = "SELECT count(d.id) FROM documents d " +
+                   "JOIN document_versions dv ON d.current_version_id = dv.id " +
+                   "WHERE d.is_deleted = false AND " +
+                   "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
+                   "AND " + ACL_PREDICATE,
+           nativeQuery = true)
+    Page<Document> rankedSearch(@Param("query") String query,
+                                @Param("userId") String userId,
+                                @Param("roles") String roles,
+                                @Param("groups") String groups,
+                                @Param("departmentId") String departmentId,
+                                @Param("privileged") boolean privileged,
+                                Pageable pageable);
+
+    /** FR-12 facets: aggregated counts by document type for current filter context. */
+    @Query(value = "SELECT dt.name AS facet_label, COUNT(d.id) AS facet_count FROM documents d " +
+                   "JOIN document_types dt ON d.document_type_id = dt.id " +
+                   "WHERE d.is_deleted = false AND " + ACL_PREDICATE + " " +
+                   "GROUP BY dt.name ORDER BY facet_count DESC LIMIT :limit",
+           nativeQuery = true)
+    List<Object[]> facetByDocumentType(@Param("userId") String userId, @Param("roles") String roles,
+                                       @Param("groups") String groups, @Param("departmentId") String departmentId,
+                                       @Param("privileged") boolean privileged, @Param("limit") int limit);
+
+    /** FR-12 facets: aggregated counts by confidentiality level. */
+    @Query(value = "SELECT d.confidentiality_level AS facet_label, COUNT(d.id) AS facet_count FROM documents d " +
+                   "WHERE d.is_deleted = false AND " + ACL_PREDICATE + " " +
+                   "GROUP BY d.confidentiality_level ORDER BY facet_count DESC",
+           nativeQuery = true)
+    List<Object[]> facetByConfidentiality(@Param("userId") String userId, @Param("roles") String roles,
+                                          @Param("groups") String groups, @Param("departmentId") String departmentId,
+                                          @Param("privileged") boolean privileged);
+
+    /** FR-12 facets: aggregated counts by owning department. */
+    @Query(value = "SELECT dep.name AS facet_label, COUNT(d.id) AS facet_count FROM documents d " +
+                   "JOIN departments dep ON d.owner_department_id = dep.id " +
+                   "WHERE d.is_deleted = false AND " + ACL_PREDICATE + " " +
+                   "GROUP BY dep.name ORDER BY facet_count DESC LIMIT :limit",
+           nativeQuery = true)
+    List<Object[]> facetByDepartment(@Param("userId") String userId, @Param("roles") String roles,
+                                     @Param("groups") String groups, @Param("departmentId") String departmentId,
+                                     @Param("privileged") boolean privileged, @Param("limit") int limit);
 }

@@ -16,4 +16,5 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCase(String username, String email);
     long countByRoleName(String roleName);
     long countByDepartmentId(UUID departmentId);
+    long countByIsActiveTrue();
 }

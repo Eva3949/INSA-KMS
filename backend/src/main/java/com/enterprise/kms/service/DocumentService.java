@@ -22,6 +22,9 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final DocumentVersionRepository documentVersionRepository;
     private final StorageService storageService;
+    private final TextExtractionService textExtractionService;
+    private final com.enterprise.kms.repository.DocumentMetadataRepository documentMetadataRepository;
+    private final com.enterprise.kms.repository.DocumentTypeFieldRepository documentTypeFieldRepository;
     private final UserRepository userRepository;
     private final DepartmentRepository departmentRepository;
     private final DocumentTypeRepository documentTypeRepository;
@@ -35,6 +38,9 @@ public class DocumentService {
     public DocumentService(DocumentRepository documentRepository,
                            DocumentVersionRepository documentVersionRepository,
                            StorageService storageService,
+                           TextExtractionService textExtractionService,
+                           com.enterprise.kms.repository.DocumentMetadataRepository documentMetadataRepository,
+                           com.enterprise.kms.repository.DocumentTypeFieldRepository documentTypeFieldRepository,
                            UserRepository userRepository,
                            DepartmentRepository departmentRepository,
                            DocumentTypeRepository documentTypeRepository,
@@ -44,6 +50,9 @@ public class DocumentService {
         this.documentRepository = documentRepository;
         this.documentVersionRepository = documentVersionRepository;
         this.storageService = storageService;
+        this.textExtractionService = textExtractionService;
+        this.documentMetadataRepository = documentMetadataRepository;
+        this.documentTypeFieldRepository = documentTypeFieldRepository;
         this.userRepository = userRepository;
         this.departmentRepository = departmentRepository;
         this.documentTypeRepository = documentTypeRepository;
@@ -84,7 +93,7 @@ public class DocumentService {
                     return documentTypeRepository.save(dt);
                 });
 
-        // FR-27: department storage quota enforcement — reject the upload before the
+        // FR-27: department storage quota enforcement Ã¢â‚¬â€ reject the upload before the
         // bytes are committed when it would exceed the department's allocation.
         enforceDepartmentQuota(dept, file.getSize());
 
@@ -112,6 +121,12 @@ public class DocumentService {
         version = documentVersionRepository.save(version);
 
         doc.setCurrentVersion(version);
+        // FR-10: extract embedded text (PDFs) or queue OCR (images/scans)
+        try {
+            textExtractionService.processNewVersion(version, file.getBytes(), version.getMimeType(), originalFilename);
+        } catch (Exception ignored) {
+            // extraction must never fail the upload
+        }
         return documentRepository.save(doc);
     }
 
@@ -219,6 +234,12 @@ public class DocumentService {
 
         doc.setCurrentVersion(version);
         doc.setUpdatedAt(OffsetDateTime.now());
+        // FR-10: extract text for the new version as well
+        try {
+            textExtractionService.processNewVersion(version, file.getBytes(), version.getMimeType(), version.getFileName());
+        } catch (Exception ignored) {
+            // extraction must never fail the check-in
+        }
         return documentRepository.save(doc);
     }
 
@@ -417,9 +438,169 @@ public class DocumentService {
         return rows;
     }
 
+    /**
+     * FR-04 version rollback: restore a document to a previous version by creating
+     * a new version that reuses the old version's storage object.  The old file bytes
+     * are not copied — the storage object is shared — so this is O(1) in I/O.
+     */
+    @Transactional
+    public Document rollbackToVersion(UUID documentId, UUID targetVersionId, String username) {
+        Document doc = getDocumentById(documentId);
+        permissionService.requireDocumentAccess(documentId, PermissionService.EDIT);
+
+        DocumentVersion targetVersion = documentVersionRepository.findById(targetVersionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Version not found: " + targetVersionId));
+        if (!targetVersion.getDocument().getId().equals(documentId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Version " + targetVersionId + " does not belong to document " + documentId);
+        }
+
+        User author = userRepository.findByUsername(username)
+                .or(() -> userRepository.findByKeycloakSub("sub-" + username))
+                .orElseGet(() -> {
+                    User u = new User();
+                    u.setUsername(username);
+                    u.setEmail(username + "@enterprise.internal");
+                    u.setKeycloakSub("sub-" + username);
+                    return userRepository.save(u);
+                });
+
+        int nextVersionNumber = doc.getCurrentVersion() != null
+                ? doc.getCurrentVersion().getVersionNumber() + 1 : 2;
+
+        DocumentVersion rollback = new DocumentVersion();
+        rollback.setDocument(doc);
+        rollback.setVersionNumber(nextVersionNumber);
+        rollback.setFileName(targetVersion.getFileName());
+        rollback.setMimeType(targetVersion.getMimeType());
+        rollback.setStorageObject(targetVersion.getStorageObject());
+        rollback.setCreatedBy(author);
+        rollback.setChangeSummary("Rolled back to version " + targetVersion.getVersionNumber());
+        rollback = documentVersionRepository.save(rollback);
+
+        doc.setCurrentVersion(rollback);
+        doc.setUpdatedAt(OffsetDateTime.now());
+        return documentRepository.save(doc);
+    }
+
     public Document getDocumentById(UUID id) {
         return documentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Document not found with ID: " + id));
+    }
+
+    /** Resolve a User by username for comment attribution etc. */
+    public User getUserByUsername(String username) {
+        return userRepository.findByUsername(username)
+                .or(() -> userRepository.findByKeycloakSub("sub-" + username))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "User not found: " + username));
+    }
+
+    // ---------------- FR-05 Check-in / Check-out lock system ----------------
+
+    @SuppressWarnings("unchecked")
+    @Transactional(readOnly = true)
+    public Map<String, Object> getLockStatus(UUID documentId) {
+        Map<String, Object> status = new LinkedHashMap<>();
+        List<?> locks = entityManager.createQuery(
+                "SELECT l FROM DocumentLock l WHERE l.documentId = :docId")
+                .setParameter("docId", documentId)
+                .getResultList();
+
+        if (locks.isEmpty()) {
+            status.put("locked", false);
+        } else {
+            com.enterprise.kms.entity.DocumentLock lockEntity = (com.enterprise.kms.entity.DocumentLock) locks.get(0);
+            boolean expired = lockEntity.getExpiresAt() != null
+                    && lockEntity.getExpiresAt().isBefore(OffsetDateTime.now());
+            status.put("locked", !expired);
+            status.put("lockedBy", lockEntity.getLockedBy() != null ? lockEntity.getLockedBy().getUsername() : null);
+            status.put("lockedAt", lockEntity.getLockedAt());
+            status.put("expiresAt", lockEntity.getExpiresAt());
+            status.put("expired", expired);
+        }
+        return status;
+    }
+
+    @Transactional
+    public Map<String, Object> checkoutDocument(UUID documentId, String username) {
+        Document doc = getDocumentById(documentId);
+
+        List<?> existing = entityManager.createQuery(
+                "SELECT l FROM DocumentLock l WHERE l.documentId = :docId")
+                .setParameter("docId", documentId)
+                .getResultList();
+
+        if (!existing.isEmpty()) {
+            com.enterprise.kms.entity.DocumentLock existingLock = (com.enterprise.kms.entity.DocumentLock) existing.get(0);
+            boolean expired = existingLock.getExpiresAt() != null
+                    && existingLock.getExpiresAt().isBefore(OffsetDateTime.now());
+            if (!expired) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Document is already checked out by " + existingLock.getLockedBy().getUsername());
+            }
+            entityManager.remove(existingLock);
+            entityManager.flush();
+        }
+
+        User user = getUserByUsername(username);
+
+        com.enterprise.kms.entity.DocumentLock lock = new com.enterprise.kms.entity.DocumentLock();
+        lock.setDocumentId(documentId);
+        lock.setDocument(doc);
+        lock.setLockedBy(user);
+        lock.setLockedAt(OffsetDateTime.now());
+        lock.setExpiresAt(OffsetDateTime.now().plusHours(8));
+        entityManager.persist(lock);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", "CHECKED_OUT");
+        result.put("lockedBy", username);
+        result.put("lockedAt", lock.getLockedAt());
+        result.put("expiresAt", lock.getExpiresAt());
+        return result;
+    }
+
+    @Transactional
+    public Document checkinDocument(UUID documentId, MultipartFile file, String changeSummary, String username) {
+        releaseLock(documentId, username, true);
+        return createDesktopCheckInVersion(documentId, file,
+                changeSummary != null ? changeSummary : "Checked in via lock release", username);
+    }
+
+    @Transactional
+    public Map<String, Object> unlockDocument(UUID documentId, String username) {
+        releaseLock(documentId, username, false);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", "UNLOCKED");
+        result.put("documentId", documentId.toString());
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void releaseLock(UUID documentId, String username, boolean requireOwnership) {
+        List<?> locks = entityManager.createQuery(
+                "SELECT l FROM DocumentLock l WHERE l.documentId = :docId")
+                .setParameter("docId", documentId)
+                .getResultList();
+
+        if (locks.isEmpty()) {
+            if (requireOwnership) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Document is not checked out");
+            }
+            return;
+        }
+
+        com.enterprise.kms.entity.DocumentLock lock = (com.enterprise.kms.entity.DocumentLock) locks.get(0);
+        boolean isOwner = lock.getLockedBy() != null
+                && username.equals(lock.getLockedBy().getUsername());
+        if (!isOwner) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only the user who checked out this document (" + lock.getLockedBy().getUsername() + ") can release the lock");
+        }
+        entityManager.remove(lock);
+        entityManager.flush();
     }
 
     /** FR-16/FR-17/FR-19 checked read of a single document. */
@@ -443,4 +624,148 @@ public class DocumentService {
         doc.setDeletedAt(null);
         documentRepository.save(doc);
     }
-}
+
+    // ---------------- Recycle bin listing (FR-08) ----------------
+
+    /**
+     * FR-08: recycle bin contents for the caller - admins see all, others only their
+     * own deletions. Mapped inside the transaction so lazy associations resolve.
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getRecycleBinResponses(Pageable pageable) {
+        PermissionService.Caller caller = permissionService.currentCaller();
+        String username = com.enterprise.kms.security.SecurityUtils.getCurrentUsername();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Document doc : documentRepository.findByIsDeletedTrue(pageable).getContent()) {
+            if (!caller.isAdmin && (doc.getAuthor() == null || !username.equals(doc.getAuthor().getUsername()))) {
+                continue;
+            }
+            Map<String, Object> row = toResponse(doc);
+            row.put("deletedAt", doc.getDeletedAt());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    // ---------------- Custom metadata values (FR-06) ----------------
+
+    /** Field definitions for the document's type, plus the stored values. */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getDocumentMetadata(UUID documentId) {
+        Document doc = permissionService.requireDocumentAccess(documentId, PermissionService.VIEW);
+
+        List<Map<String, Object>> fields = new ArrayList<>();
+        Map<String, String> values = new LinkedHashMap<>();
+        if (doc.getDocumentType() != null) {
+            for (com.enterprise.kms.entity.DocumentTypeField field : documentTypeFieldRepository
+                    .findByDocumentTypeIdOrderByCreatedAtAsc(doc.getDocumentType().getId())) {
+                Map<String, Object> fieldRow = new LinkedHashMap<>();
+                fieldRow.put("fieldKey", field.getFieldKey());
+                fieldRow.put("label", field.getLabel());
+                fieldRow.put("dataType", field.getDataType());
+                fieldRow.put("required", field.getIsRequired());
+                fields.add(fieldRow);
+            }
+        }
+        for (com.enterprise.kms.entity.DocumentMetadata metadata : documentMetadataRepository.findByDocumentId(documentId)) {
+            values.put(metadata.getMetadataKey(), metadata.getMetadataValue());
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("documentTypeId", doc.getDocumentType() != null ? doc.getDocumentType().getId() : null);
+        result.put("fields", fields);
+        result.put("values", values);
+        return result;
+    }
+
+    /**
+     * Upserts custom metadata values, validating against the document type's field
+     * definitions (FR-06): unknown keys are rejected and required fields must be
+     * present with a value matching the declared data type.
+     */
+    @Transactional
+    public Map<String, Object> putDocumentMetadata(UUID documentId, Map<String, String> incoming) {
+        permissionService.requireDocumentAccess(documentId, PermissionService.EDIT);
+        Document doc = documentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
+        if (doc.getDocumentType() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Document has no document type");
+        }
+
+        List<com.enterprise.kms.entity.DocumentTypeField> defs =
+                documentTypeFieldRepository.findByDocumentTypeIdOrderByCreatedAtAsc(doc.getDocumentType().getId());
+
+        for (Map.Entry<String, String> entry : incoming.entrySet()) {
+            String key = entry.getKey();
+            com.enterprise.kms.entity.DocumentTypeField def = defs.stream()
+                    .filter(d -> d.getFieldKey().equalsIgnoreCase(key))
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Unknown metadata field '" + key + "' for document type " + doc.getDocumentType().getName()));
+            validateMetadataValue(def, entry.getValue());
+
+            com.enterprise.kms.entity.DocumentMetadata record = documentMetadataRepository
+                    .findByDocumentIdAndMetadataKey(documentId, def.getFieldKey())
+                    .orElseGet(() -> {
+                        com.enterprise.kms.entity.DocumentMetadata m = new com.enterprise.kms.entity.DocumentMetadata();
+                        m.setDocument(doc);
+                        m.setMetadataKey(def.getFieldKey());
+                        return m;
+                    });
+            record.setMetadataValue(entry.getValue() == null ? "" : entry.getValue());
+            documentMetadataRepository.save(record);
+        }
+
+        // Required-field completeness check (FR-06)
+        List<String> missing = new ArrayList<>();
+        for (com.enterprise.kms.entity.DocumentTypeField def : defs) {
+            if (Boolean.TRUE.equals(def.getIsRequired())) {
+                String value = incoming.containsKey(def.getFieldKey())
+                        ? incoming.get(def.getFieldKey())
+                        : documentMetadataRepository
+                                .findByDocumentIdAndMetadataKey(documentId, def.getFieldKey())
+                                .map(com.enterprise.kms.entity.DocumentMetadata::getMetadataValue)
+                                .orElse("");
+                if (value == null || value.isBlank()) {
+                    missing.add(def.getLabel());
+                }
+            }
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("saved", incoming.size());
+        result.put("missingRequiredFields", missing);
+        return result;
+    }
+
+    private void validateMetadataValue(com.enterprise.kms.entity.DocumentTypeField def, String value) {
+        if (value == null || value.isBlank()) {
+            return; // blank clears/omits; required-ness is checked afterwards
+        }
+        switch (def.getDataType() != null ? def.getDataType().toUpperCase() : "TEXT") {
+            case "NUMBER" -> {
+                try {
+                    new java.math.BigDecimal(value.trim());
+                } catch (NumberFormatException e) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Field '" + def.getLabel() + "' must be a number");
+                }
+            }
+            case "DATE" -> {
+                try {
+                    java.time.LocalDate.parse(value.trim());
+                } catch (Exception e) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Field '" + def.getLabel() + "' must be an ISO date (YYYY-MM-DD)");
+                }
+            }
+            case "BOOLEAN" -> {
+                String v = value.trim().toLowerCase();
+                if (!"true".equals(v) && !"false".equals(v)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Field '" + def.getLabel() + "' must be true or false");
+                }
+            }
+            default -> { /* TEXT accepts anything */ }
+        }
+    }}

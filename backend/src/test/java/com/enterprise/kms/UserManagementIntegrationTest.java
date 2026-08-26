@@ -31,7 +31,7 @@ class UserManagementIntegrationTest {
         userRepository = Mockito.mock(UserRepository.class);
         documentRepository = Mockito.mock(DocumentRepository.class);
         departmentRepository = Mockito.mock(DepartmentRepository.class);
-        adminController = new AdminController(userRepository, documentRepository, departmentRepository);
+        adminController = new AdminController(userRepository, documentRepository, departmentRepository, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test

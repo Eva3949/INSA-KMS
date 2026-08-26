@@ -12,4 +12,5 @@ import java.util.UUID;
 public interface DocumentVersionRepository extends JpaRepository<DocumentVersion, UUID> {
     List<DocumentVersion> findByDocumentIdOrderByVersionNumberDesc(UUID documentId);
     Optional<DocumentVersion> findByDocumentIdAndVersionNumber(UUID documentId, Integer versionNumber);
+    long countByStorageObject_Id(UUID storageObjectId);
 }

@@ -11,7 +11,11 @@ import com.enterprise.kms.repository.DocumentRepository;
 import com.enterprise.kms.repository.StorageObjectRepository;
 import com.enterprise.kms.repository.UserRepository;
 import com.enterprise.kms.service.AdminCatalogService;
+import com.enterprise.kms.service.ApprovalService;
+import com.enterprise.kms.service.EmailService;
 import com.enterprise.kms.service.KeycloakAdminService;
+import com.enterprise.kms.service.RecycleBinPurgeJob;
+import com.enterprise.kms.service.TextExtractionService;
 import com.enterprise.kms.service.ReportsService;
 import com.enterprise.kms.service.RetentionDispositionJob;
 import com.enterprise.kms.service.SystemSettingService;
@@ -44,6 +48,18 @@ public class AdminController {
     private final ReportsService reportsService;
     private final RetentionDispositionJob retentionDispositionJob;
     private final KeycloakAdminService keycloakAdminService;
+    private final ApprovalService approvalService;
+    private final EmailService emailService;
+    private final TextExtractionService textExtractionService;
+    private final RecycleBinPurgeJob recycleBinPurgeJob;
+    private final com.enterprise.kms.service.SiemForwardService siemForwardService;
+    private final org.springframework.context.ApplicationContext applicationContext;
+    private final com.enterprise.kms.service.HrisSyncService hrisSyncService;
+    private final com.enterprise.kms.service.BackupService backupService;
+    private final com.enterprise.kms.repository.ShareLinkRepository shareLinkRepository;
+    private final com.enterprise.kms.service.MicrosoftGraphService microsoftGraphService;
+    private final com.enterprise.kms.service.ChatIntegrationService chatIntegrationService;
+    private final com.enterprise.kms.service.AuditService auditService;
 
     public AdminController(UserRepository userRepository,
                            DocumentRepository documentRepository,
@@ -54,7 +70,19 @@ public class AdminController {
                            SystemSettingService systemSettingService,
                            ReportsService reportsService,
                            RetentionDispositionJob retentionDispositionJob,
-                           KeycloakAdminService keycloakAdminService) {
+                           KeycloakAdminService keycloakAdminService,
+                           ApprovalService approvalService,
+                           EmailService emailService,
+                           TextExtractionService textExtractionService,
+                           RecycleBinPurgeJob recycleBinPurgeJob,
+                           com.enterprise.kms.service.SiemForwardService siemForwardService,
+                           org.springframework.context.ApplicationContext applicationContext,
+                           com.enterprise.kms.service.HrisSyncService hrisSyncService,
+                           com.enterprise.kms.service.BackupService backupService,
+                           com.enterprise.kms.repository.ShareLinkRepository shareLinkRepository,
+                           com.enterprise.kms.service.MicrosoftGraphService microsoftGraphService,
+                           com.enterprise.kms.service.ChatIntegrationService chatIntegrationService,
+                           com.enterprise.kms.service.AuditService auditService) {
         this.userRepository = userRepository;
         this.documentRepository = documentRepository;
         this.departmentRepository = departmentRepository;
@@ -65,6 +93,18 @@ public class AdminController {
         this.reportsService = reportsService;
         this.retentionDispositionJob = retentionDispositionJob;
         this.keycloakAdminService = keycloakAdminService;
+        this.approvalService = approvalService;
+        this.emailService = emailService;
+        this.textExtractionService = textExtractionService;
+        this.recycleBinPurgeJob = recycleBinPurgeJob;
+        this.siemForwardService = siemForwardService;
+        this.applicationContext = applicationContext;
+        this.hrisSyncService = hrisSyncService;
+        this.backupService = backupService;
+        this.shareLinkRepository = shareLinkRepository;
+        this.microsoftGraphService = microsoftGraphService;
+        this.chatIntegrationService = chatIntegrationService;
+        this.auditService = auditService;
     }
 
     // ================= Dashboard Summary =================
@@ -84,7 +124,7 @@ public class AdminController {
                 "totalDepartments", totalDepartments,
                 "storageQuotaUsedBytes", totalStorageBytes,
                 "storageQuotaTotalBytes", 107374182400L,
-                "pendingOcrJobs", 0
+                "pendingOcrJobs", textExtractionService.countPendingOcrJobs()
         ));
     }
 
@@ -122,7 +162,7 @@ public class AdminController {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A user with this username already exists");
         }
 
-        // FR-18/FR-27: provision in Keycloak first — a user that only exists in the KMS
+        // FR-18/FR-27: provision in Keycloak first â€” a user that only exists in the KMS
         // database cannot authenticate, and its role would carry no authority.
         String keycloakSub = keycloakAdminService.createUser(
                 username, email, body.get("firstName"), body.get("lastName"),
@@ -435,7 +475,60 @@ public class AdminController {
         return getSettings();
     }
 
+    // ================= Share Links Management (FR-20) =================
+
+    @GetMapping("/share-links")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_IT_SECURITY')")
+    @AuditLog(action = "SHARE_LINKS_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> listShareLinks(
+            @RequestParam(name = "includeExpired", defaultValue = "false") boolean includeExpired) {
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
+        List<com.enterprise.kms.entity.ShareLink> links = includeExpired
+                ? shareLinkRepository.findAll()
+                : shareLinkRepository.findByExpiresAtAfterOrderByCreatedAtDesc(now);
+
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (com.enterprise.kms.entity.ShareLink link : links) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", link.getId());
+            row.put("documentId", link.getDocument() != null ? link.getDocument().getId() : null);
+            row.put("documentTitle", link.getDocument() != null ? link.getDocument().getTitle() : null);
+            row.put("permissionLevel", link.getPermissionLevel());
+            row.put("hasPassword", link.getPasswordHash() != null && !link.getPasswordHash().isBlank());
+            row.put("expiresAt", link.getExpiresAt());
+            row.put("createdAt", link.getCreatedAt());
+            row.put("isExpired", link.getExpiresAt().isBefore(now));
+            rows.add(row);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("totalLinks", links.size());
+        result.put("activeLinks", shareLinkRepository.countByExpiresAtAfter(now));
+        result.put("links", rows);
+        return ResponseEntity.ok(result);
+    }
+
+    @DeleteMapping("/share-links/{id}")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_CONTENT_OWNER')")
+    @AuditLog(action = "SHARE_LINK_REVOKED", resourceType = "SHARE_LINK")
+    public ResponseEntity<Map<String, String>> revokeShareLink(@PathVariable("id") UUID id) {
+        com.enterprise.kms.entity.ShareLink link = shareLinkRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Share link not found"));
+        shareLinkRepository.delete(link);
+        auditService.recordAuditLog(com.enterprise.kms.security.SecurityUtils.getCurrentUsername(), null,
+                "SHARE_LINK_REVOKED", "SHARE_LINK", id.toString(), null,
+                "{\"documentId\":\"" + (link.getDocument() != null ? link.getDocument().getId() : "") + "\"}");
+        return ResponseEntity.ok(Map.of("message", "Share link revoked", "id", id.toString()));
+    }
+
     // ================= Storage Integrity (FR-21 / NFR-06 support) =================
+
+    @GetMapping("/storage/encryption")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_IT_SECURITY')")
+    @AuditLog(action = "STORAGE_ENCRYPTION_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> getEncryptionStatus() {
+        return ResponseEntity.ok(adminCatalogService.getEncryptionStatus());
+    }
 
     @GetMapping("/storage/stats")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
@@ -491,10 +584,23 @@ public class AdminController {
     @AuditLog(action = "SECURITY_EVENTS_VIEW", resourceType = "AUDIT")
     public ResponseEntity<Page<com.enterprise.kms.entity.AuditLogEntity>> getSecurityEvents(
             @RequestParam(name = "page", defaultValue = "0") int page,
-            @RequestParam(name = "size", defaultValue = "25") int size) {
-        Page<com.enterprise.kms.entity.AuditLogEntity> events = auditLogRepository.findAll(
-                PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100),
-                        Sort.by(Sort.Direction.DESC, "createdAt")));
+            @RequestParam(name = "size", defaultValue = "25") int size,
+            @RequestParam(name = "action", required = false) String action,
+            @RequestParam(name = "user", required = false) String user,
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+            @RequestParam(name = "from", required = false) java.time.OffsetDateTime from,
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
+            @RequestParam(name = "to", required = false) java.time.OffsetDateTime to) {
+        PageRequest request = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100));
+        boolean filtered = (action != null && !action.isBlank()) || (user != null && !user.isBlank())
+                || from != null || to != null;
+        Page<com.enterprise.kms.entity.AuditLogEntity> events = filtered
+                ? auditLogRepository.findFiltered(
+                        (action != null && !action.isBlank()) ? action : null,
+                        (user != null && !user.isBlank()) ? user : null, from, to, request)
+                : auditLogRepository.findAll(
+                        PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100),
+                                Sort.by(Sort.Direction.DESC, "createdAt")));
         return ResponseEntity.ok(events);
     }
 
@@ -558,5 +664,392 @@ public class AdminController {
     @AuditLog(action = "RETENTION_RUN_TRIGGERED", resourceType = "GOVERNANCE")
     public ResponseEntity<Map<String, Long>> runRetentionDispositions() {
         return ResponseEntity.ok(retentionDispositionJob.runDispositions());
+    }
+
+    // ================= Groups management CRUD (FR-27) =================
+
+    @PostMapping("/groups")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "GROUP_CREATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> createGroup(@RequestBody Map<String, Object> body) {
+        String name = (String) body.get("name");
+        UUID departmentId = body.get("departmentId") != null && !body.get("departmentId").toString().isBlank()
+                ? UUID.fromString(body.get("departmentId").toString()) : null;
+        return ResponseEntity.status(HttpStatus.CREATED).body(adminCatalogService.createGroup(name, departmentId));
+    }
+
+    @PutMapping("/groups/{id}")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "GROUP_UPDATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> updateGroup(@PathVariable("id") UUID id,
+                                                           @RequestBody Map<String, Object> body) {
+        String name = (String) body.get("name");
+        UUID departmentId = body.get("departmentId") != null && !body.get("departmentId").toString().isBlank()
+                ? UUID.fromString(body.get("departmentId").toString()) : null;
+        return ResponseEntity.ok(adminCatalogService.updateGroup(id, name, departmentId));
+    }
+
+    @DeleteMapping("/groups/{id}")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "GROUP_DELETED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, String>> deleteGroup(@PathVariable("id") UUID id) {
+        adminCatalogService.deleteGroup(id);
+        return ResponseEntity.ok(Map.of("message", "Group deleted", "id", id.toString()));
+    }
+
+    @GetMapping("/groups/{id}/members")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "GROUP_MEMBERS_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<List<Map<String, Object>>> listGroupMembers(@PathVariable("id") UUID id) {
+        return ResponseEntity.ok(adminCatalogService.listMembers(id));
+    }
+
+    @PostMapping("/groups/{id}/members")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "GROUP_MEMBER_ADDED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, String>> addGroupMember(@PathVariable("id") UUID id,
+                                                              @RequestBody Map<String, String> body) {
+        if (body.get("userId") == null || body.get("userId").isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "userId is required");
+        }
+        adminCatalogService.addMember(id, UUID.fromString(body.get("userId")));
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", "Member added"));
+    }
+
+    @DeleteMapping("/groups/{id}/members/{userId}")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "GROUP_MEMBER_REMOVED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, String>> removeGroupMember(@PathVariable("id") UUID id,
+                                                                 @PathVariable("userId") UUID userId) {
+        adminCatalogService.removeMember(id, userId);
+        return ResponseEntity.ok(Map.of("message", "Member removed"));
+    }
+
+    // ================= Custom metadata field definitions (FR-06) =================
+
+    @GetMapping("/document-types/{id}/fields")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_COMPLIANCE_OFFICER')")
+    @AuditLog(action = "DOC_TYPE_FIELDS_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<List<Map<String, Object>>> listTypeFields(@PathVariable("id") UUID id) {
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (com.enterprise.kms.entity.DocumentTypeField field : adminCatalogService.listTypeFields(id)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", field.getId());
+            row.put("fieldKey", field.getFieldKey());
+            row.put("label", field.getLabel());
+            row.put("dataType", field.getDataType());
+            row.put("required", field.getIsRequired());
+            rows.add(row);
+        }
+        return ResponseEntity.ok(rows);
+    }
+
+    @PostMapping("/document-types/{id}/fields")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "DOC_TYPE_FIELD_CREATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> createTypeField(@PathVariable("id") UUID id,
+                                                               @RequestBody Map<String, Object> body) {
+        String fieldKey = (String) body.get("fieldKey");
+        String label = (String) body.getOrDefault("label", fieldKey);
+        String dataType = (String) body.getOrDefault("dataType", "TEXT");
+        boolean required = Boolean.parseBoolean(String.valueOf(body.getOrDefault("required", "false")));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(adminCatalogService.createTypeField(id, fieldKey, label, dataType, required));
+    }
+
+    @DeleteMapping("/document-types/{id}/fields/{fieldId}")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "DOC_TYPE_FIELD_DELETED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, String>> deleteTypeField(@PathVariable("id") UUID id,
+                                                                @PathVariable("fieldId") UUID fieldId) {
+        adminCatalogService.deleteTypeField(fieldId);
+        return ResponseEntity.ok(Map.of("message", "Field deleted"));
+    }
+
+    @PutMapping("/document-types/{id}/fields/{fieldId}")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "DOC_TYPE_FIELD_UPDATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> updateTypeField(@PathVariable("id") UUID id,
+                                                                @PathVariable("fieldId") UUID fieldId,
+                                                                @RequestBody Map<String, Object> body) {
+        String label = (String) body.get("label");
+        String dataType = (String) body.get("dataType");
+        Boolean required = body.get("required") != null ? Boolean.parseBoolean(String.valueOf(body.get("required"))) : null;
+        return ResponseEntity.ok(adminCatalogService.updateTypeField(fieldId, label, dataType, required));
+    }
+
+    // ================= Recycle Bin purge (FR-08) =================
+
+    @PostMapping("/recycle-bin/purge")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_CONTENT_OWNER')")
+    @AuditLog(action = "RECYCLE_BIN_PURGE_TRIGGERED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> purgeRecycleBin(
+            @RequestParam(name = "days", required = false) Integer days) {
+        return ResponseEntity.ok(recycleBinPurgeJob.purgeExpired(days));
+    }
+
+    // ================= SIEM forwarding trigger (Section 7) =================
+
+    @PostMapping("/security/siem/forward")
+    @PreAuthorize("hasAnyRole('ROLE_IT_SECURITY', 'ROLE_ADMIN')")
+    @AuditLog(action = "SIEM_FORWARD_TRIGGERED", resourceType = "AUDIT")
+    public ResponseEntity<Map<String, Object>> forwardToSiem() {
+        return ResponseEntity.ok(siemForwardService.forwardPending());
+    }
+
+    // ================= Email diagnostics (Section 7) =================
+
+    @PostMapping("/mail/test")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "MAIL_TEST_SENT", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> sendTestEmail(@RequestBody Map<String, String> body) {
+        String to = body.get("to");
+        if (to == null || to.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "'to' is required");
+        }
+        return ResponseEntity.ok(emailService.send(to, "KMS SMTP Test",
+                "This is a test message from the KMS administration console."));
+    }
+
+    // ================= Microsoft 365 Integration (Section 7) =================
+
+    @GetMapping("/integrations/microsoft365")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "MS365_STATUS_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> getMicrosoft365Status() {
+        return ResponseEntity.ok(microsoftGraphService.getGraphHealthStatus());
+    }
+
+    @PostMapping("/integrations/microsoft365/test")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "MS365_CONNECTION_TEST", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> testMicrosoft365Connection() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        try {
+            String token = microsoftGraphService.acquireGraphAccessToken();
+            result.put("status", microsoftGraphService.isConfigured() ? "SUCCESS" : "MOCK_TOKEN_RETURNED");
+            result.put("configured", microsoftGraphService.isConfigured());
+            result.put("tokenEndpoint", token);
+        } catch (IllegalStateException e) {
+            result.put("status", "DISABLED");
+            result.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    @PutMapping("/integrations/microsoft365/toggle")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "MS365_TOGGLE", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> toggleMicrosoft365(@RequestBody Map<String, Object> body) {
+        String enabled = body.get("enabled") != null ? body.get("enabled").toString() : "true";
+        systemSettingService.updateSettings(Map.of("ms.graph.enabled", enabled));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ms.graph.enabled", Boolean.parseBoolean(enabled));
+        result.put("message", "Microsoft 365 integration " + (Boolean.parseBoolean(enabled) ? "enabled" : "disabled"));
+        return ResponseEntity.ok(result);
+    }
+
+    // ================= Chat/Collaboration Integration (Section 7) =================
+
+    @GetMapping("/integrations/chat")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "CHAT_INTEGRATION_STATUS", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> getChatIntegrationStatus() {
+        return ResponseEntity.ok(chatIntegrationService.getStatus());
+    }
+
+    @PostMapping("/integrations/chat/test")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "CHAT_INTEGRATION_TEST", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> testChatIntegration(@RequestBody Map<String, String> body) {
+        String message = body.getOrDefault("message", "KMS integration test message");
+        return ResponseEntity.ok(chatIntegrationService.sendTestMessage(message));
+    }
+
+    // ================= Backup status (NFR-06) =================
+
+    @GetMapping("/backup/status")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "BACKUP_STATUS_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> getBackupStatus() {
+        return ResponseEntity.ok(adminCatalogService.getBackupStatus(systemSettingService));
+    }
+
+    @PostMapping("/backup/run")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "BACKUP_TRIGGERED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> runBackup() {
+        return ResponseEntity.ok(backupService.executeBackup());
+    }
+
+    @PostMapping("/backup/restore")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "BACKUP_RESTORE_TRIGGERED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> restoreBackup(@RequestBody Map<String, String> body) {
+        String fileName = body.get("fileName");
+        if (fileName == null || fileName.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "fileName is required");
+        }
+        return ResponseEntity.ok(backupService.restoreBackup(fileName));
+    }
+
+    @GetMapping("/backup/files")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "BACKUP_FILES_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<java.util.List<Map<String, Object>>> listBackupFiles() {
+        return ResponseEntity.ok(backupService.listBackupFiles());
+    }
+
+    @GetMapping("/backup/durability")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_IT_SECURITY')")
+    @AuditLog(action = "BACKUP_DURABILITY_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> getDurabilityStatus() {
+        return ResponseEntity.ok(backupService.getDurabilityStatus());
+    }
+
+    // ================= HRIS Sync (Section 7) =================
+
+    @GetMapping("/hris/status")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "HRIS_STATUS_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> getHrisSyncStatus() {
+        return ResponseEntity.ok(hrisSyncService.getSyncStatus());
+    }
+
+    @PostMapping("/hris/sync")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "HRIS_SYNC_TRIGGERED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> triggerHrisSync(
+            @RequestBody(required = false) java.util.List<java.util.Map<String, String>> users) {
+        if (users != null && !users.isEmpty()) {
+            return ResponseEntity.ok(hrisSyncService.syncFromExternalList(users));
+        }
+        return ResponseEntity.ok(hrisSyncService.syncFromFeed());
+    }
+
+    // ================= OCR queue (FR-10) =================
+
+    @GetMapping("/ocr/jobs")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "OCR_JOBS_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> listOcrJobs(@RequestParam(name = "limit", defaultValue = "50") int limit) {
+        List<Map<String, Object>> jobs = new java.util.ArrayList<>();
+        for (com.enterprise.kms.entity.OcrJob job : textExtractionService.recentJobs(limit)) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", job.getId());
+            row.put("status", job.getStatus());
+            row.put("errorMessage", job.getErrorMessage());
+            row.put("createdAt", job.getCreatedAt());
+            row.put("processedAt", job.getProcessedAt());
+            com.enterprise.kms.entity.DocumentVersion v = job.getVersion();
+            row.put("fileName", v != null ? v.getFileName() : null);
+            jobs.add(row);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("pendingCount", textExtractionService.countPendingOcrJobs());
+        result.put("jobs", jobs);
+        return ResponseEntity.ok(result);
+    }
+
+    // ================= Approval workflow templates (FR-25) =================
+
+    @GetMapping("/approval-templates")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_CONTENT_OWNER')")
+    @AuditLog(action = "APPROVAL_TEMPLATES_VIEW", resourceType = "SYSTEM")
+    public ResponseEntity<List<Map<String, Object>>> listApprovalTemplates() {
+        return ResponseEntity.ok(approvalService.listTemplates());
+    }
+
+    @PostMapping("/approval-templates")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "APPROVAL_TEMPLATE_CREATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> createApprovalTemplate(@RequestBody Map<String, Object> body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(approvalService.createTemplate(
+                (String) body.get("name"),
+                (String) body.get("description"),
+                body.get("documentTypeId") != null && !body.get("documentTypeId").toString().isBlank()
+                        ? UUID.fromString(body.get("documentTypeId").toString()) : null,
+                body.get("isActive") != null ? Boolean.valueOf(body.get("isActive").toString()) : null,
+                parseUuidList(body.get("approverIds"))));
+    }
+
+    @PutMapping("/approval-templates/{id}")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "APPROVAL_TEMPLATE_UPDATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> updateApprovalTemplate(@PathVariable("id") UUID id,
+                                                                       @RequestBody Map<String, Object> body) {
+        return ResponseEntity.ok(approvalService.updateTemplate(id,
+                (String) body.get("name"),
+                (String) body.get("description"),
+                body.get("documentTypeId") != null && !body.get("documentTypeId").toString().isBlank()
+                        ? UUID.fromString(body.get("documentTypeId").toString()) : null,
+                body.get("isActive") != null ? Boolean.valueOf(body.get("isActive").toString()) : null,
+                parseUuidList(body.get("approverIds"))));
+    }
+
+    @DeleteMapping("/approval-templates/{id}")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "APPROVAL_TEMPLATE_DELETED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, String>> deleteApprovalTemplate(@PathVariable("id") UUID id) {
+        approvalService.deleteTemplate(id);
+        return ResponseEntity.ok(Map.of("message", "Template deleted"));
+    }
+
+    // ================= Approval Execution (FR-25) =================
+
+    @PostMapping("/approvals/submit")
+    @PreAuthorize("hasAnyRole('ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    @AuditLog(action = "APPROVAL_SUBMITTED", resourceType = "APPROVAL_WORKFLOW")
+    public ResponseEntity<Map<String, Object>> submitForApproval(@RequestBody Map<String, String> body) {
+        UUID documentId = UUID.fromString(body.get("documentId"));
+        UUID templateId = UUID.fromString(body.get("templateId"));
+        String username = com.enterprise.kms.security.SecurityUtils.getCurrentUsername();
+        return ResponseEntity.ok(approvalService.submitForApproval(documentId, templateId, username));
+    }
+
+    @PostMapping("/approvals/{workflowId}/steps/{stepId}/decide")
+    @PreAuthorize("hasAnyRole('ROLE_CONTENT_OWNER', 'ROLE_ADMIN', 'ROLE_COMPLIANCE_OFFICER')")
+    @AuditLog(action = "APPROVAL_STEP_DECIDED", resourceType = "APPROVAL_WORKFLOW")
+    public ResponseEntity<Map<String, Object>> decideApprovalStep(
+            @PathVariable("workflowId") UUID workflowId,
+            @PathVariable("stepId") UUID stepId,
+            @RequestBody Map<String, String> body) {
+        String decision = body.get("decision");
+        String comments = body.get("comments");
+        String username = com.enterprise.kms.security.SecurityUtils.getCurrentUsername();
+        return ResponseEntity.ok(approvalService.decideStep(workflowId, stepId, decision, username, comments));
+    }
+
+    @GetMapping("/approvals/pending")
+    @PreAuthorize("hasAnyRole('ROLE_CONTENT_OWNER', 'ROLE_ADMIN', 'ROLE_COMPLIANCE_OFFICER')")
+    @AuditLog(action = "APPROVALS_PENDING_VIEW", resourceType = "APPROVAL_WORKFLOW")
+    public ResponseEntity<List<Map<String, Object>>> listPendingApprovals() {
+        String username = com.enterprise.kms.security.SecurityUtils.getCurrentUsername();
+        return ResponseEntity.ok(approvalService.listPendingApprovals(username));
+    }
+
+    @GetMapping("/approvals")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_CONTENT_OWNER')")
+    @AuditLog(action = "APPROVALS_VIEW", resourceType = "APPROVAL_WORKFLOW")
+    public ResponseEntity<List<Map<String, Object>>> listAllWorkflows(
+            @RequestParam(name = "status", required = false) String status) {
+        return ResponseEntity.ok(approvalService.listAllWorkflows(status));
+    }
+
+    @GetMapping("/approvals/{workflowId}")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_CONTENT_OWNER')")
+    @AuditLog(action = "APPROVAL_WORKFLOW_VIEW", resourceType = "APPROVAL_WORKFLOW")
+    public ResponseEntity<Map<String, Object>> describeWorkflow(@PathVariable("workflowId") UUID workflowId) {
+        return ResponseEntity.ok(approvalService.describeWorkflowById(workflowId));
+    }
+
+    private List<UUID> parseUuidList(Object raw) {
+        List<UUID> ids = new java.util.ArrayList<>();
+        if (raw instanceof List<?> list) {
+            for (Object item : list) ids.add(UUID.fromString(item.toString()));
+        } else if (raw instanceof String s && !s.isBlank()) {
+            for (String part : s.split(",")) { if (!part.isBlank()) ids.add(UUID.fromString(part.trim())); }
+        }
+        return ids;
     }
 }
