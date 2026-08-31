@@ -38,4 +38,20 @@ public class SavedSearch {
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
+
+    @Column(name = "alert_enabled", nullable = false)
+    private Boolean alertEnabled = false;
+
+    @Column(name = "alert_frequency", length = 20)
+    private String alertFrequency = "DAILY";
+
+    @Column(name = "last_alert_at")
+    private java.time.OffsetDateTime lastAlertAt;
+
+    public Boolean getAlertEnabled() { return alertEnabled; }
+    public void setAlertEnabled(Boolean alertEnabled) { this.alertEnabled = alertEnabled; }
+    public String getAlertFrequency() { return alertFrequency; }
+    public void setAlertFrequency(String alertFrequency) { this.alertFrequency = alertFrequency; }
+    public java.time.OffsetDateTime getLastAlertAt() { return lastAlertAt; }
+    public void setLastAlertAt(java.time.OffsetDateTime lastAlertAt) { this.lastAlertAt = lastAlertAt; }
 }

@@ -20,6 +20,9 @@ spring:
       maximum-pool-size: 10
       minimum-idle: 2
       idle-timeout: 30000
+      connection-timeout: 30000
+      validation-timeout: 15000
+      connection-init-sql: SELECT 1
 
   jpa:
     hibernate:
@@ -45,6 +48,10 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
     locations: classpath:db/migration
+    # Render DB already has a divergent V16 applied (that created the subscriptions
+    # table + saved_searches alert columns). Skip checksum validation so startup
+    # is not blocked by that already-applied version.
+    validate-on-migrate: false
     # V4/V5 were applied to the Render database from files that are not in this
     # repository. Tolerate applied-but-missing migrations so startup is not blocked;
     # remove this once those two scripts are restored into db/migration.

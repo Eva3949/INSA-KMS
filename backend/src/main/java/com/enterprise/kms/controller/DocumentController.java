@@ -9,7 +9,11 @@ import com.enterprise.kms.service.ShareLinkService;
 import com.enterprise.kms.repository.DocumentCommentRepository;
 import com.enterprise.kms.repository.DocumentFavoriteRepository;
 import com.enterprise.kms.repository.DocumentLockRepository;
+import com.enterprise.kms.entity.Subscription;
+import com.enterprise.kms.entity.User;
+import com.enterprise.kms.repository.DocumentRepository;
 import com.enterprise.kms.repository.DocumentShareRepository;
+import com.enterprise.kms.repository.SubscriptionRepository;
 import com.enterprise.kms.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -20,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -34,6 +39,8 @@ public class DocumentController {
     private final UserRepository userRepository;
     private final DocumentFavoriteRepository documentFavoriteRepository;
     private final DocumentShareRepository documentShareRepository;
+    private final SubscriptionRepository subscriptionRepository;
+    private final DocumentRepository documentRepository;
 
     public DocumentController(DocumentService documentService, PermissionService permissionService,
                               com.enterprise.kms.service.SystemSettingService systemSettingService,
@@ -42,7 +49,9 @@ public class DocumentController {
                               DocumentLockRepository documentLockRepository,
                               UserRepository userRepository,
                               DocumentFavoriteRepository documentFavoriteRepository,
-                              DocumentShareRepository documentShareRepository) {
+                              DocumentShareRepository documentShareRepository,
+                              SubscriptionRepository subscriptionRepository,
+                              DocumentRepository documentRepository) {
         this.documentService = documentService;
         this.permissionService = permissionService;
         this.systemSettingService = systemSettingService;
@@ -52,6 +61,8 @@ public class DocumentController {
         this.userRepository = userRepository;
         this.documentFavoriteRepository = documentFavoriteRepository;
         this.documentShareRepository = documentShareRepository;
+        this.subscriptionRepository = subscriptionRepository;
+        this.documentRepository = documentRepository;
     }
 
     @GetMapping("/{id}/metadata")
@@ -371,7 +382,11 @@ public class DocumentController {
                         org.springframework.http.HttpStatus.UNAUTHORIZED, "User not found"));
         java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
         for (com.enterprise.kms.entity.DocumentFavorite fav : documentFavoriteRepository.findByUserIdOrderByCreatedAtDesc(user.getId())) {
-            result.add(documentService.toResponse(fav.getDocument()));
+            com.enterprise.kms.entity.Document d = fav.getDocument();
+            if (d == null || Boolean.TRUE.equals(d.getIsDeleted()) || !"PUBLISHED".equals(d.getStatus())) {
+                continue;
+            }
+            result.add(documentService.toResponse(d));
         }
         return ResponseEntity.ok(result);
     }
@@ -389,12 +404,142 @@ public class DocumentController {
                 documentShareRepository.findByGrantedToUserId(user.getId());
         java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
         for (com.enterprise.kms.entity.DocumentShare share : shares) {
-            java.util.Map<String, Object> row = documentService.toResponse(share.getDocument());
+            com.enterprise.kms.entity.Document d = share.getDocument();
+            if (d == null || Boolean.TRUE.equals(d.getIsDeleted()) || !"PUBLISHED".equals(d.getStatus())) {
+                continue;
+            }
+            java.util.Map<String, Object> row = documentService.toResponse(d);
             row.put("shareId", share.getId());
             row.put("permissionLevel", share.getPermissionLevel());
             row.put("sharedAt", share.getCreatedAt());
             result.add(row);
         }
         return ResponseEntity.ok(result);
+    }
+
+    // ===== FR-26: Subscriptions =====
+
+    @PostMapping("/{id}/subscribe")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<java.util.Map<String, Object>> subscribe(
+            @PathVariable("id") UUID documentId,
+            @RequestBody(required = false) java.util.Map<String, Boolean> body) {
+        String username = SecurityUtils.getCurrentUsername();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "User not found"));
+
+        Subscription sub = subscriptionRepository
+                .findByUserIdAndTargetTypeAndTargetId(user.getId(), "DOCUMENT", documentId)
+                .orElseGet(() -> {
+                    Subscription s = new Subscription();
+                    s.setUser(user);
+                    s.setTargetType("DOCUMENT");
+                    s.setTargetId(documentId);
+                    return s;
+                });
+
+        if (body != null) {
+            if (body.containsKey("notifyVersions")) sub.setNotifyVersions(body.get("notifyVersions"));
+            if (body.containsKey("notifyComments")) sub.setNotifyComments(body.get("notifyComments"));
+            if (body.containsKey("notifyShares")) sub.setNotifyShares(body.get("notifyShares"));
+        }
+
+        Subscription saved = subscriptionRepository.save(sub);
+        return ResponseEntity.ok(java.util.Map.of(
+                "subscribed", true,
+                "subscriptionId", saved.getId().toString(),
+                "notifyVersions", saved.getNotifyVersions(),
+                "notifyComments", saved.getNotifyComments(),
+                "notifyShares", saved.getNotifyShares()
+        ));
+    }
+
+    @DeleteMapping("/{id}/subscribe")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<java.util.Map<String, Object>> unsubscribe(@PathVariable("id") UUID documentId) {
+        String username = SecurityUtils.getCurrentUsername();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "User not found"));
+
+        subscriptionRepository.deleteByUserIdAndTargetTypeAndTargetId(user.getId(), "DOCUMENT", documentId);
+        return ResponseEntity.ok(java.util.Map.of("subscribed", false));
+    }
+
+    @GetMapping("/{id}/subscribe/status")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<Map<String, Object>> subscriptionStatus(@PathVariable("id") UUID documentId) {
+        String username = SecurityUtils.getCurrentUsername();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "User not found"));
+
+        var opt = subscriptionRepository.findByUserIdAndTargetTypeAndTargetId(user.getId(), "DOCUMENT", documentId);
+        if (opt.isPresent()) {
+            var sub = opt.get();
+            return ResponseEntity.ok(Map.of(
+                    "subscribed", true,
+                    "subscriptionId", sub.getId().toString(),
+                    "notifyVersions", sub.getNotifyVersions(),
+                    "notifyComments", sub.getNotifyComments(),
+                    "notifyShares", sub.getNotifyShares()));
+        }
+        return ResponseEntity.ok(Map.of("subscribed", false));
+    }
+
+    // ===== FR-24: Native App Integration =====
+
+    @GetMapping("/{id}/desktop-open")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<Map<String, Object>> desktopOpen(@PathVariable("id") UUID documentId) {
+        Document doc = documentRepository.findById(documentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        permissionService.requireDocumentAccess(documentId, PermissionService.VIEW);
+
+        String fileName = doc.getCurrentVersion() != null && doc.getCurrentVersion().getFileName() != null
+                ? doc.getCurrentVersion().getFileName()
+                : doc.getTitle();
+        if (fileName == null) fileName = "document";
+
+        String extension = "";
+        int dotIdx = fileName.lastIndexOf('.');
+        if (dotIdx >= 0) extension = fileName.substring(dotIdx + 1).toLowerCase();
+
+        String downloadUrl = "/api/v1/documents/" + documentId + "/download";
+
+        String protocolUri = null;
+        String openMethod = "browser";
+
+        switch (extension) {
+            case "doc", "docx" -> {
+                protocolUri = "ms-word:ofe|u|" + downloadUrl;
+                openMethod = "microsoft-word";
+            }
+            case "xls", "xlsx" -> {
+                protocolUri = "ms-excel:ofe|u|" + downloadUrl;
+                openMethod = "microsoft-excel";
+            }
+            case "ppt", "pptx" -> {
+                protocolUri = "ms-powerpoint:ofe|u|" + downloadUrl;
+                openMethod = "microsoft-powerpoint";
+            }
+            case "pdf" -> {
+                openMethod = "browser";
+            }
+            default -> {
+                openMethod = "download";
+            }
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "documentId", documentId.toString(),
+                "fileName", fileName,
+                "extension", extension,
+                "protocolUri", protocolUri != null ? protocolUri : "",
+                "downloadUrl", downloadUrl,
+                "openMethod", openMethod
+        ));
     }
 }

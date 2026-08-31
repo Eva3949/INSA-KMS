@@ -25,6 +25,8 @@ interface ApprovalWorkflow {
     stepNumber: number;
     approverUsername?: string;
     status: string;
+    decision?: string;
+    comments?: string;
     decidedAt?: string;
   }>;
 }
@@ -106,8 +108,12 @@ export default function MyApprovalsPage() {
         const totalSteps = wf.steps.length;
         const approvedSteps = wf.steps.filter((s) => s.status === 'APPROVED').length;
         const pendingStep = wf.steps.find((s) => s.status === 'PENDING');
+        const rejectedStep = wf.steps.find((s) => s.decision === 'REJECTED' || s.status === 'REJECTED');
+        const finalComments = [...wf.steps]
+          .filter((s) => s.comments)
+          .map((s) => ({ approver: s.approverUsername, decision: s.decision, comments: s.comments }));
         return (
-          <div className="space-y-1">
+          <div className="space-y-1 max-w-xs">
             <div className="text-xs font-semibold text-kms-slate-800">
               {approvedSteps}/{totalSteps} steps approved
             </div>
@@ -122,6 +128,21 @@ export default function MyApprovalsPage() {
             {wf.status === 'REJECTED' && (
               <div className="text-[11px] text-red-600 font-medium">Rejected — returned to draft</div>
             )}
+            {rejectedStep && (
+              <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1">
+                <span className="font-semibold">Rejection reason:</span>{' '}
+                {rejectedStep.comments || 'No comment provided by the reviewer.'}
+              </div>
+            )}
+            {finalComments.map((fc, i) => (
+              <div key={i} className="text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1">
+                <span className="font-semibold">
+                  {fc.approver || 'Reviewer'}
+                  {fc.decision === 'APPROVED' ? ' approved:' : ' comment:'}
+                </span>{' '}
+                {fc.comments}
+              </div>
+            ))}
           </div>
         );
       },

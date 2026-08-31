@@ -134,12 +134,12 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     @Query(value = "SELECT d.* FROM documents d " +
                    "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                   "WHERE d.is_deleted = false AND " +
+                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
                    "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
                    "AND " + ACL_PREDICATE,
            countQuery = "SELECT count(d.id) FROM documents d " +
                         "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                        "WHERE d.is_deleted = false AND " +
+                        "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
                         "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
                         "AND " + ACL_PREDICATE,
            nativeQuery = true)
@@ -151,8 +151,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                             @Param("privileged") boolean privileged,
                                             Pageable pageable);
 
-    @Query(value = "SELECT d.* FROM documents d WHERE d.is_deleted = false AND " + ACL_PREDICATE,
-           countQuery = "SELECT count(d.id) FROM documents d WHERE d.is_deleted = false AND " + ACL_PREDICATE,
+    @Query(value = "SELECT d.* FROM documents d WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " + ACL_PREDICATE,
+           countQuery = "SELECT count(d.id) FROM documents d WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " + ACL_PREDICATE,
            nativeQuery = true)
     Page<Document> findAuthorized(@Param("userId") String userId,
                                   @Param("roles") String roles,
@@ -164,11 +164,11 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     @Query(value = "SELECT d.* FROM documents d " +
                    "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                   "WHERE d.is_deleted = false AND " +
+                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
                    "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)",
            countQuery = "SELECT count(d.id) FROM documents d " +
                         "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                        "WHERE d.is_deleted = false AND " +
+                        "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
                         "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)",
            nativeQuery = true)
     Page<Document> fullTextSearch(@Param("query") String query, Pageable pageable);
@@ -179,7 +179,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                    "LEFT JOIN document_types dt ON d.document_type_id = dt.id " +
                    "LEFT JOIN users u ON d.author_user_id = u.id " +
                    "LEFT JOIN departments dep ON d.owner_department_id = dep.id " +
-                   "WHERE d.is_deleted = false " +
+                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' " +
                    "AND (:query IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)) " +
                    "AND (:docTypeId IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
                    "AND (:deptId IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
@@ -193,7 +193,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                    "LEFT JOIN document_types dt ON d.document_type_id = dt.id " +
                    "LEFT JOIN users u ON d.author_user_id = u.id " +
                    "LEFT JOIN departments dep ON d.owner_department_id = dep.id " +
-                   "WHERE d.is_deleted = false " +
+                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' " +
                    "AND (:query IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)) " +
                    "AND (:docTypeId IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
                    "AND (:deptId IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
@@ -220,14 +220,14 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     /** FR-14 improved ranking: combines ts_rank_cd with recency signal. */
     @Query(value = "SELECT d.* FROM documents d " +
                    "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                   "WHERE d.is_deleted = false AND " +
+                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
                    "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
                    "AND " + ACL_PREDICATE + " " +
                    "ORDER BY (ts_rank_cd(to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title), plainto_tsquery('english', :query)) * 0.7 " +
                    "+ (1.0 / (1.0 + extract(epoch from (NOW() - d.updated_at)) / 86400.0)) * 0.3) DESC",
            countQuery = "SELECT count(d.id) FROM documents d " +
                    "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                   "WHERE d.is_deleted = false AND " +
+                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
                    "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
                    "AND " + ACL_PREDICATE,
            nativeQuery = true)
@@ -242,7 +242,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     /** FR-12 facets: aggregated counts by document type for current filter context. */
     @Query(value = "SELECT dt.name AS facet_label, COUNT(d.id) AS facet_count FROM documents d " +
                    "JOIN document_types dt ON d.document_type_id = dt.id " +
-                   "WHERE d.is_deleted = false AND " + ACL_PREDICATE + " " +
+                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " + ACL_PREDICATE + " " +
                    "GROUP BY dt.name ORDER BY facet_count DESC LIMIT :limit",
            nativeQuery = true)
     List<Object[]> facetByDocumentType(@Param("userId") String userId, @Param("roles") String roles,
@@ -251,7 +251,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     /** FR-12 facets: aggregated counts by confidentiality level. */
     @Query(value = "SELECT d.confidentiality_level AS facet_label, COUNT(d.id) AS facet_count FROM documents d " +
-                   "WHERE d.is_deleted = false AND " + ACL_PREDICATE + " " +
+                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " + ACL_PREDICATE + " " +
                    "GROUP BY d.confidentiality_level ORDER BY facet_count DESC",
            nativeQuery = true)
     List<Object[]> facetByConfidentiality(@Param("userId") String userId, @Param("roles") String roles,
@@ -261,7 +261,7 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     /** FR-12 facets: aggregated counts by owning department. */
     @Query(value = "SELECT dep.name AS facet_label, COUNT(d.id) AS facet_count FROM documents d " +
                    "JOIN departments dep ON d.owner_department_id = dep.id " +
-                   "WHERE d.is_deleted = false AND " + ACL_PREDICATE + " " +
+                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " + ACL_PREDICATE + " " +
                    "GROUP BY dep.name ORDER BY facet_count DESC LIMIT :limit",
            nativeQuery = true)
     List<Object[]> facetByDepartment(@Param("userId") String userId, @Param("roles") String roles,

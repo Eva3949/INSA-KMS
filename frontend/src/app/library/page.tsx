@@ -15,15 +15,9 @@ import {
   FileText, 
   Plus, 
   Filter, 
-  Lock, 
-  LockOpen,
   FileCheck, 
   Share2, 
-  MoreVertical, 
-  Trash2,
-  Tag,
   FolderPlus,
-  Loader2,
   ShieldCheck,
   History,
 } from 'lucide-react';
@@ -95,15 +89,9 @@ export default function DocumentLibraryPage() {
   const PAGE_SIZE = 10;
 
   const [selectedDoc, setSelectedDoc] = useState<ApiDocument | null>(null);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [filterClass, setFilterClass] = useState('ALL');
-  const [lockStatuses, setLockStatuses] = useState<Record<string, { locked: boolean; lockedBy?: string }>>({});
-  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
-  const [checkinDocId, setCheckinDocId] = useState<string | null>(null);
-  const [checkinFile, setCheckinFile] = useState<File | null>(null);
-  const [checkinLoading, setCheckinLoading] = useState(false);
   const [libraryMessage, setLibraryMessage] = useState<string | null>(null);
   const [folderCreating, setFolderCreating] = useState(false);
 
@@ -125,13 +113,6 @@ export default function DocumentLibraryPage() {
           setTotalPages(paged.totalPages ?? 1);
           setTotalItems(paged.totalElements ?? 0);
         }
-        docs.forEach((doc) => {
-          kmsApi.documents.getLockStatus(doc.id)
-            .then((status) => {
-              setLockStatuses((prev) => ({ ...prev, [doc.id]: { locked: status.locked, lockedBy: status.lockedBy } }));
-            })
-            .catch(() => {});
-        });
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Failed to load documents';
@@ -160,69 +141,13 @@ export default function DocumentLibraryPage() {
     }
   };
 
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) setSelectedIds(documents.map((d) => d.id));
-    else setSelectedIds([]);
-  };
-
-  const handleSelectRow = (id: string) => {
-    setSelectedIds((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
-  };
-
   const filteredDocs = documents.filter((doc) => {
     const classification = getDocClassification(doc);
     if (filterClass !== 'ALL' && classification !== filterClass) return false;
     return true;
   });
 
-  const handleCheckout = async (docId: string) => {
-    setCheckoutLoading(docId);
-    try {
-      await kmsApi.documents.checkout(docId);
-      const status = await kmsApi.documents.getLockStatus(docId);
-      setLockStatuses((prev) => ({ ...prev, [docId]: { locked: status.locked, lockedBy: status.lockedBy } }));
-      setDocuments((prev) => prev.map((d) => d.id === docId ? { ...d, isCheckedOut: true } : d));
-      setLibraryMessage('Document checked out successfully.');
-    } catch (err: unknown) {
-      setLibraryMessage(err instanceof Error ? err.message : 'Checkout failed');
-    } finally {
-      setCheckoutLoading(null);
-    }
-  };
-
-  const handleCheckin = async (docId: string) => {
-    if (!checkinFile) return;
-    setCheckinLoading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', checkinFile);
-      await kmsApi.documents.checkin(docId, formData);
-      const status = await kmsApi.documents.getLockStatus(docId);
-      setLockStatuses((prev) => ({ ...prev, [docId]: { locked: status.locked, lockedBy: status.lockedBy } }));
-      setDocuments((prev) => prev.map((d) => d.id === docId ? { ...d, isCheckedOut: false } : d));
-      setCheckinDocId(null);
-      setCheckinFile(null);
-      setLibraryMessage('Document checked in successfully.');
-    } catch (err: unknown) {
-      setLibraryMessage(err instanceof Error ? err.message : 'Check-in failed');
-    } finally {
-      setCheckinLoading(false);
-    }
-  };
-
   const columns = [
-    {
-      header: '',
-      accessor: (doc: ApiDocument) => (
-        <input
-          type="checkbox"
-          checked={selectedIds.includes(doc.id)}
-          onChange={() => handleSelectRow(doc.id)}
-          className="rounded border-kms-slate-300 text-blue-600 focus:ring-blue-500"
-        />
-      ),
-      className: 'w-8',
-    },
     {
       header: 'Title',
       accessor: (doc: ApiDocument) => (
@@ -312,61 +237,6 @@ export default function DocumentLibraryPage() {
             </div>
           )}
         </div>
-
-        {/* Bulk Actions Bar */}
-        {selectedIds.length > 0 && (
-          <div className="bg-blue-50 border border-blue-200 p-2.5 rounded flex items-center justify-between text-xs text-blue-900">
-            <div className="font-semibold flex items-center gap-2">
-              <span>{selectedIds.length} item(s) selected</span>
-              <button onClick={() => setSelectedIds([])} className="text-[11px] text-blue-700 hover:underline font-normal">
-                Clear Selection
-              </button>
-            </div>
-            {canWrite && (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={<Tag className="w-3.5 h-3.5" />}
-                  onClick={async () => {
-                    const tag = window.prompt('Enter tag name:');
-                    if (!tag) return;
-                    try {
-                      await kmsApi.documents.bulk({ operation: 'tag', documentIds: selectedIds, tags: [tag] });
-                      setLibraryMessage('Tags applied successfully.');
-                      setSelectedIds([]);
-                      loadDocuments(currentPage);
-                    } catch (err: unknown) {
-                      setLibraryMessage(err instanceof Error ? err.message : 'Failed to apply tags');
-                    }
-                  }}
-                >
-                  Bulk Tag
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  icon={<Trash2 className="w-3.5 h-3.5" />}
-                  onClick={async () => {
-                    if (!window.confirm(`Delete ${selectedIds.length} selected document(s)?`)) return;
-                    try {
-                      for (const id of selectedIds) {
-                        await kmsApi.documents.delete(id);
-                      }
-                      setLibraryMessage('Documents deleted successfully.');
-                      setSelectedIds([]);
-                      loadDocuments(currentPage);
-                    } catch (err: unknown) {
-                      setLibraryMessage(err instanceof Error ? err.message : 'Failed to delete documents');
-                    }
-                  }}
-                >
-                  Delete Selected
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
 
         {libraryMessage && (
           <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 text-xs rounded flex items-center justify-between">

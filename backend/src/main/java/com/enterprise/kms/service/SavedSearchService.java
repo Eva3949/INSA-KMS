@@ -42,7 +42,8 @@ public class SavedSearchService {
     }
 
     @Transactional
-    public Map<String, Object> createSavedSearch(UUID userId, String name, String queryJson) {
+    public Map<String, Object> createSavedSearch(UUID userId, String name, String queryJson,
+                                                   Boolean alertEnabled, String alertFrequency) {
         User user = userRepository.findById(userId).orElse(null);
         if (user == null) throw new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.NOT_FOUND, "User not found");
@@ -51,6 +52,8 @@ public class SavedSearchService {
         ss.setUser(user);
         ss.setName(name);
         ss.setQueryJson(queryJson);
+        if (alertEnabled != null) ss.setAlertEnabled(alertEnabled);
+        if (alertFrequency != null && !alertFrequency.isBlank()) ss.setAlertFrequency(alertFrequency);
         ss = savedSearchRepository.save(ss);
         return toMap(ss);
     }
@@ -63,12 +66,24 @@ public class SavedSearchService {
         }
     }
 
+    @Transactional
+    public void updateSavedSearch(UUID savedSearchId, UUID userId, Boolean alertEnabled, String alertFrequency) {
+        SavedSearch ss = savedSearchRepository.findById(savedSearchId).orElse(null);
+        if (ss == null || !ss.getUser().getId().equals(userId)) return;
+        if (alertEnabled != null) ss.setAlertEnabled(alertEnabled);
+        if (alertFrequency != null && !alertFrequency.isBlank()) ss.setAlertFrequency(alertFrequency);
+        savedSearchRepository.save(ss);
+    }
+
     private Map<String, Object> toMap(SavedSearch ss) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", ss.getId());
         row.put("name", ss.getName());
         row.put("queryJson", ss.getQueryJson());
         row.put("createdAt", ss.getCreatedAt());
+        row.put("alertEnabled", ss.getAlertEnabled());
+        row.put("alertFrequency", ss.getAlertFrequency());
+        row.put("lastAlertAt", ss.getLastAlertAt());
         return row;
     }
 }

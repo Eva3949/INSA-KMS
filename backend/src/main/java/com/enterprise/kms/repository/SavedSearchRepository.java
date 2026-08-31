@@ -10,4 +10,5 @@ import java.util.UUID;
 @Repository
 public interface SavedSearchRepository extends JpaRepository<SavedSearch, UUID> {
     List<SavedSearch> findByUserIdOrderByCreatedAtDesc(UUID userId);
+    List<SavedSearch> findByAlertEnabledTrue();
 }

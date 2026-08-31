@@ -33,12 +33,14 @@ public class SavedSearchController {
     @PostMapping
     @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
     @AuditLog(action = "SAVED_SEARCH_CREATE", resourceType = "SEARCH")
-    public ResponseEntity<Map<String, Object>> createSavedSearch(@RequestBody Map<String, String> body) {
+    public ResponseEntity<Map<String, Object>> createSavedSearch(@RequestBody Map<String, Object> body) {
         UUID userId = resolveUserId();
         if (userId == null) return ResponseEntity.badRequest().build();
-        String name = body.get("name");
-        String queryJson = body.get("queryJson");
-        return ResponseEntity.ok(savedSearchService.createSavedSearch(userId, name, queryJson));
+        String name = (String) body.get("name");
+        String queryJson = (String) body.get("queryJson");
+        Boolean alertEnabled = body.containsKey("alertEnabled") ? (Boolean) body.get("alertEnabled") : null;
+        String alertFrequency = (String) body.get("alertFrequency");
+        return ResponseEntity.ok(savedSearchService.createSavedSearch(userId, name, queryJson, alertEnabled, alertFrequency));
     }
 
     @DeleteMapping("/{id}")
@@ -48,6 +50,18 @@ public class SavedSearchController {
         UUID userId = resolveUserId();
         if (userId != null) savedSearchService.deleteSavedSearch(id, userId);
         return ResponseEntity.ok(Map.of("status", "DELETED"));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    @AuditLog(action = "SAVED_SEARCH_UPDATE", resourceType = "SEARCH")
+    public ResponseEntity<Map<String, Object>> updateSavedSearch(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
+        UUID userId = resolveUserId();
+        if (userId == null) return ResponseEntity.badRequest().build();
+        Boolean alertEnabled = body.containsKey("alertEnabled") ? (Boolean) body.get("alertEnabled") : null;
+        String alertFrequency = (String) body.get("alertFrequency");
+        savedSearchService.updateSavedSearch(id, userId, alertEnabled, alertFrequency);
+        return ResponseEntity.ok(Map.of("status", "UPDATED"));
     }
 
     private UUID resolveUserId() {

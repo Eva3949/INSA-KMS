@@ -10,7 +10,7 @@ import { Pagination } from '@/src/components/ui/Pagination';
 import { LoadingState } from '@/src/components/ui/States';
 import { Alert } from '@/src/components/ui/Alert';
 import { kmsApi } from '@/src/lib/api';
-import { User, FileText, RefreshCw, Upload, Lock, LockOpen, Share2, Trash2, History, FileCheck, Loader2, MoreVertical } from 'lucide-react';
+import { User, FileText, RefreshCw, Upload, Lock, LockOpen, Share2, Trash2, History, FileCheck, Loader2, MoreVertical, Tag } from 'lucide-react';
 import Link from 'next/link';
 
 interface DocRow {
@@ -48,6 +48,7 @@ export default function MyDocumentsPage() {
   const [checkinLoading, setCheckinLoading] = React.useState(false);
   const [actionMessage, setActionMessage] = React.useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = React.useState<DocRow | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
 
   const load = React.useCallback((targetPage: number) => {
     setIsLoading(true);
@@ -117,7 +118,27 @@ export default function MyDocumentsPage() {
     }
   };
 
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) setSelectedIds(docs.map((d) => d.id));
+    else setSelectedIds([]);
+  };
+
+  const handleSelectRow = (id: string) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
+  };
+
   const columns = [
+    {
+      header: '',
+      accessor: (doc: DocRow) => (
+        <input
+          type="checkbox"
+          checked={selectedIds.includes(doc.id)}
+          onChange={() => handleSelectRow(doc.id)}
+          className="rounded border-kms-slate-300 text-blue-600 focus:ring-blue-500"
+        />
+      ),
+    },
     {
       header: 'Title',
       accessor: (doc: DocRow) => (
@@ -277,6 +298,55 @@ export default function MyDocumentsPage() {
           <LoadingState message="Loading your documents..." />
         ) : (
           <>
+            {/* Bulk Actions Bar */}
+            {selectedIds.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 p-2.5 rounded flex items-center justify-between text-xs text-blue-900">
+                <div className="font-semibold flex items-center gap-2">
+                  <span>{selectedIds.length} item(s) selected</span>
+                  <button onClick={() => setSelectedIds([])} className="text-[11px] text-blue-700 hover:underline font-normal">
+                    Clear Selection
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      const tag = window.prompt('Enter tag name:');
+                      if (!tag) return;
+                      try {
+                        await kmsApi.documents.bulk({ operation: 'tag', documentIds: selectedIds, tags: [tag] });
+                        setActionMessage('Tags applied successfully.');
+                        setSelectedIds([]);
+                        load(page);
+                      } catch (err: unknown) {
+                        setActionMessage(err instanceof Error ? err.message : 'Failed to apply tags');
+                      }
+                    }}
+                    className="px-3 py-1.5 border border-slate-300 rounded text-xs font-medium hover:bg-white transition-colors flex items-center gap-1"
+                  >
+                    <Tag className="w-3.5 h-3.5" /> Bulk Tag
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm(`Delete ${selectedIds.length} selected document(s)?`)) return;
+                      try {
+                        for (const id of selectedIds) {
+                          await kmsApi.documents.delete(id);
+                        }
+                        setActionMessage('Documents deleted successfully.');
+                        setSelectedIds([]);
+                        load(page);
+                      } catch (err: unknown) {
+                        setActionMessage(err instanceof Error ? err.message : 'Failed to delete documents');
+                      }
+                    }}
+                    className="px-3 py-1.5 border border-red-300 bg-red-50 text-red-700 rounded text-xs font-medium hover:bg-red-100 transition-colors flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Selected
+                  </button>
+                </div>
+              </div>
+            )}
+
             <Table
               columns={columns}
               data={docs}

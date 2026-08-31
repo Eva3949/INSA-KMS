@@ -85,7 +85,7 @@ export const kmsApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-    desktopOpen: (id: string) => fetchApi<{ documentId: string; fileName: string; desktopUri: string; supportedApp: string; webdavRequirementNote: string }>(`/documents/${id}/desktop-open`),
+    desktopOpen: (id: string) => fetchApi<{ documentId: string; fileName: string; extension: string; protocolUri: string; downloadUrl: string; openMethod: string }>(`/documents/${id}/desktop-open`),
     desktopCheckIn: async (id: string, formData: FormData) => {
       const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
       const headers: Record<string, string> = {};
@@ -144,6 +144,18 @@ export const kmsApi = {
     getShareLinks: (id: string) => fetchApi<any[]>(`/documents/${id}/share-links`),
     createShareLink: (id: string, payload: { expiryHours?: number; password?: string }) =>
       fetchApi<any>(`/documents/${id}/share-link`, { method: 'POST', body: JSON.stringify(payload) }),
+  },
+
+  // FR-26: Subscriptions
+  subscriptions: {
+    getDocStatus: (documentId: string) => fetchApi<{ subscribed: boolean; subscriptionId?: string; notifyVersions?: boolean; notifyComments?: boolean; notifyShares?: boolean }>(`/documents/${documentId}/subscribe/status`),
+    subscribeDoc: (documentId: string, prefs?: { notifyVersions?: boolean; notifyComments?: boolean; notifyShares?: boolean }) =>
+      fetchApi<{ subscribed: boolean; subscriptionId: string; notifyVersions: boolean; notifyComments: boolean; notifyShares: boolean }>(`/documents/${documentId}/subscribe`, { method: 'POST', body: JSON.stringify(prefs || {}) }),
+    unsubscribeDoc: (documentId: string) => fetchApi<{ subscribed: boolean }>(`/documents/${documentId}/subscribe`, { method: 'DELETE' }),
+    getFolderStatus: (folderId: string) => fetchApi<{ subscribed: boolean; subscriptionId?: string; notifyVersions?: boolean; notifyComments?: boolean; notifyShares?: boolean }>(`/folders/${folderId}/subscribe/status`),
+    subscribeFolder: (folderId: string, prefs?: { notifyVersions?: boolean; notifyComments?: boolean; notifyShares?: boolean }) =>
+      fetchApi<{ subscribed: boolean; subscriptionId: string; notifyVersions: boolean; notifyComments: boolean; notifyShares: boolean }>(`/folders/${folderId}/subscribe`, { method: 'POST', body: JSON.stringify(prefs || {}) }),
+    unsubscribeFolder: (folderId: string) => fetchApi<{ subscribed: boolean }>(`/folders/${folderId}/subscribe`, { method: 'DELETE' }),
   },
 
   // Folders

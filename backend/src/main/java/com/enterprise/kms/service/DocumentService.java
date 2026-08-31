@@ -31,6 +31,7 @@ public class DocumentService {
     private final FolderRepository folderRepository;
     private final PermissionService permissionService;
     private final com.enterprise.kms.repository.LegalHoldItemRepository legalHoldItemRepository;
+    private final ApprovalService approvalService;
 
     @jakarta.persistence.PersistenceContext
     private jakarta.persistence.EntityManager entityManager;
@@ -46,7 +47,8 @@ public class DocumentService {
                            DocumentTypeRepository documentTypeRepository,
                            FolderRepository folderRepository,
                            PermissionService permissionService,
-                           com.enterprise.kms.repository.LegalHoldItemRepository legalHoldItemRepository) {
+                           com.enterprise.kms.repository.LegalHoldItemRepository legalHoldItemRepository,
+                           ApprovalService approvalService) {
         this.documentRepository = documentRepository;
         this.documentVersionRepository = documentVersionRepository;
         this.storageService = storageService;
@@ -59,6 +61,7 @@ public class DocumentService {
         this.folderRepository = folderRepository;
         this.permissionService = permissionService;
         this.legalHoldItemRepository = legalHoldItemRepository;
+        this.approvalService = approvalService;
     }
 
     @Transactional
@@ -127,6 +130,9 @@ public class DocumentService {
         } catch (Exception ignored) {
             // extraction must never fail the upload
         }
+        // FR-25: a freshly uploaded document goes straight into review (UNDER_REVIEW,
+        // hidden from the public library) with an auto-routed approval workflow.
+        approvalService.autoSubmitNewDocument(doc, username);
         return documentRepository.save(doc);
     }
 

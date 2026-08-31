@@ -38,7 +38,7 @@ public class Document {
 
     @Column(nullable = false)
     @org.hibernate.annotations.ColumnTransformer(write = "?::document_status_enum")
-    private String status = "DRAFT";
+    private String status = "UNDER_REVIEW";
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "current_version_id")

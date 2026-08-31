@@ -230,6 +230,59 @@ public class ApprovalService {
         return describeWorkflow(workflow);
     }
 
+    /**
+     * FR-25 auto-submit: called immediately after a fresh upload so a new document
+     * starts its life in review (UNDER_REVIEW) with an approval workflow already
+     * routed through the first active template (if any). If no active template
+     * exists the document is left UNDER_REVIEW so it stays hidden from the public
+     * library until someone approves it.
+     */
+    @Transactional
+    public boolean autoSubmitNewDocument(Document doc, String username) {
+        List<ApprovalWorkflowTemplate> templates = templateRepository.findByIsActiveTrue();
+        ApprovalWorkflowTemplate template = templates.isEmpty() ? null : templates.get(0);
+
+        List<ApprovalTemplateStep> templateSteps = template == null
+                ? java.util.Collections.emptyList()
+                : templateStepRepository.findByTemplate_IdOrderByStepNumberAsc(template.getId());
+        if (template == null || templateSteps.isEmpty()) {
+            return false;
+        }
+
+        if (workflowRepository.findByDocumentId(doc.getId())
+                .filter(w -> "PENDING".equals(w.getStatus()) || "IN_PROGRESS".equals(w.getStatus()))
+                .isPresent()) {
+            return false;
+        }
+
+        User submitter = userRepository.findByUsername(username).orElse(null);
+
+        ApprovalWorkflow workflow = new ApprovalWorkflow();
+        workflow.setDocument(doc);
+        workflow.setTemplate(template);
+        workflow.setSubmittedBy(submitter);
+        workflow.setTitle(doc.getTitle() + " \u2014 " + template.getName());
+        workflow.setStatus("IN_PROGRESS");
+        workflow = workflowRepository.save(workflow);
+
+        for (ApprovalTemplateStep ts : templateSteps) {
+            ApprovalStep step = new ApprovalStep();
+            step.setWorkflow(workflow);
+            step.setStepNumber(ts.getStepNumber());
+            step.setApprover(ts.getApprover());
+            step.setStatus(ts.getStepNumber() == 1 ? "PENDING" : "WAITING");
+            approvalStepRepository.save(step);
+        }
+
+        doc.setStatus("UNDER_REVIEW");
+        documentRepository.save(doc);
+
+        auditService.recordAuditLog(username, null,
+                "DOCUMENT_SUBMITTED_FOR_APPROVAL", "DOCUMENT", doc.getId().toString(), null,
+                "{\"workflowId\":\"" + workflow.getId() + "\",\"templateName\":\"" + template.getName() + "\"}");
+        return true;
+    }
+
     @Transactional
     public Map<String, Object> decideStep(UUID workflowId, UUID stepId, String decision, String username, String comments) {
         if (!"APPROVED".equals(decision) && !"REJECTED".equals(decision)) {
@@ -253,7 +306,11 @@ public class ApprovalService {
 
         User caller = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-        if (!step.getApprover().getId().equals(caller.getId())) {
+        boolean isOversight = "ROLE_ADMIN".equals(caller.getRoleName())
+                || "ROLE_CONTENT_OWNER".equals(caller.getRoleName())
+                || "ROLE_COMPLIANCE_OFFICER".equals(caller.getRoleName());
+        if (step.getApprover() == null
+                || (!isOversight && !step.getApprover().getId().equals(caller.getId()))) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not the approver for this step");
         }
 
@@ -314,25 +371,32 @@ public class ApprovalService {
     public List<Map<String, Object>> listPendingApprovals(String username) {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-        List<ApprovalStep> pendingSteps = approvalStepRepository
-                .findByWorkflowIdAndStatus(null, "PENDING").stream()
-                .filter(s -> s.getApprover() != null && s.getApprover().getId().equals(user.getId()))
-                .toList();
+        boolean isAdmin = "ROLE_ADMIN".equals(user.getRoleName());
 
+        List<ApprovalStep> pendingSteps = approvalStepRepository.findByStatus("PENDING");
+
+        // Admins (and oversight roles) see every in-progress workflow with a pending
+        // step; a regular approver only sees the steps actually assigned to them.
         List<Map<String, Object>> result = new ArrayList<>();
+        java.util.LinkedHashSet<UUID> seen = new java.util.LinkedHashSet<>();
         for (ApprovalStep step : pendingSteps) {
             ApprovalWorkflow wf = step.getWorkflow();
-            if ("IN_PROGRESS".equals(wf.getStatus())) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("workflowId", wf.getId());
-                row.put("documentId", wf.getDocument() != null ? wf.getDocument().getId() : null);
-                row.put("documentTitle", wf.getDocument() != null ? wf.getDocument().getTitle() : null);
-                row.put("templateName", wf.getTemplate() != null ? wf.getTemplate().getName() : null);
-                row.put("stepId", step.getId());
-                row.put("stepNumber", step.getStepNumber());
-                row.put("submittedAt", wf.getCreatedAt());
-                result.add(row);
+            if (wf == null
+                    || !"IN_PROGRESS".equals(wf.getStatus())
+                    || wf.getId() == null
+                    || seen.contains(wf.getId())) {
+                continue;
             }
+            boolean assignedToCaller = step.getApprover() != null
+                    && user.getId() != null
+                    && step.getApprover().getId().equals(user.getId());
+            if (!isAdmin && !assignedToCaller) {
+                continue;
+            }
+            seen.add(wf.getId());
+            Map<String, Object> row = describeWorkflow(wf);
+            row.put("submittedBy", wf.getSubmittedBy() != null ? wf.getSubmittedBy().getUsername() : null);
+            result.add(row);
         }
         return result;
     }
@@ -355,12 +419,18 @@ public class ApprovalService {
         List<Map<String, Object>> steps = new ArrayList<>();
         for (ApprovalStep step : approvalStepRepository.findByWorkflowIdOrderByStepNumberAsc(workflow.getId())) {
             Map<String, Object> stepRow = new LinkedHashMap<>();
+            stepRow.put("id", step.getId());
             stepRow.put("stepId", step.getId());
             stepRow.put("stepNumber", step.getStepNumber());
             stepRow.put("approverId", step.getApprover() != null ? step.getApprover().getId() : null);
             stepRow.put("approverUsername", step.getApprover() != null ? step.getApprover().getUsername() : null);
             stepRow.put("status", step.getStatus());
             stepRow.put("decidedAt", step.getDecidedAt());
+            documentApprovalRepository.findByWorkflowIdAndStepId(workflow.getId(), step.getId())
+                    .ifPresent(ap -> {
+                        stepRow.put("decision", ap.getDecision());
+                        stepRow.put("comments", ap.getComments());
+                    });
             steps.add(stepRow);
         }
         row.put("steps", steps);

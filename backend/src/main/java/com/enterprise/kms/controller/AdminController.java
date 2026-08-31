@@ -954,7 +954,7 @@ public class AdminController {
     // ================= Approval workflow templates (FR-25) =================
 
     @GetMapping("/approval-templates")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_CONTENT_OWNER')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_CONTENT_OWNER', 'ROLE_CONTRIBUTOR')")
     @AuditLog(action = "APPROVAL_TEMPLATES_VIEW", resourceType = "SYSTEM")
     public ResponseEntity<List<Map<String, Object>>> listApprovalTemplates() {
         return ResponseEntity.ok(approvalService.listTemplates());

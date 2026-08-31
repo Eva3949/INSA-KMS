@@ -25,6 +25,8 @@ import {
   Star,
   Send,
   Loader2,
+  Bell,
+  BellOff,
 } from 'lucide-react';
 import Link from 'next/link';
 import { kmsApi } from '@/src/lib/api';
@@ -95,6 +97,10 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
   const [approvalTemplates, setApprovalTemplates] = useState<Array<{ id: string; name: string }>>([]);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subPrefs, setSubPrefs] = useState({ notifyVersions: true, notifyComments: true, notifyShares: true });
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [showSubPrefs, setShowSubPrefs] = useState(false);
 
   const isOwner = doc && doc.owner && user && (doc.owner === user.username || doc.owner === user.fullName);
   const canSubmitForApproval = isOwner || roles.includes('ROLE_ADMIN');
@@ -106,11 +112,20 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
       kmsApi.documents.getById(docId),
       kmsApi.documents.getVersions(docId).catch(() => []),
       kmsApi.documents.getFavoriteStatus(docId).catch(() => ({ favorited: false })),
+      kmsApi.subscriptions.getDocStatus(docId).catch(() => ({ subscribed: false })),
     ])
-      .then(([docData, versionData, favData]) => {
+      .then(([docData, versionData, favData, subData]) => {
         setDoc(docData as ApiDocument);
         setVersions((versionData ?? []) as VersionRow[]);
         setIsFavorited(favData.favorited);
+        setIsSubscribed((subData as any).subscribed);
+        if ((subData as any).notifyVersions !== undefined) {
+          setSubPrefs({
+            notifyVersions: (subData as any).notifyVersions,
+            notifyComments: (subData as any).notifyComments,
+            notifyShares: (subData as any).notifyShares,
+          });
+        }
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load document'))
       .finally(() => setIsLoading(false));
@@ -170,9 +185,11 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
   const handleOpenInDesktopApp = async () => {
     try {
       const res = await kmsApi.documents.desktopOpen(docId);
-      setStatusMessage(`Desktop launcher generated for ${res.fileName} via ${res.supportedApp}.`);
-      if (typeof window !== 'undefined' && res.desktopUri) {
-        window.location.href = res.desktopUri;
+      if (res.protocolUri) {
+        window.location.href = res.protocolUri;
+        setStatusMessage(`Opening ${res.fileName} in ${res.openMethod}...`);
+      } else {
+        setStatusMessage(`${res.fileName}: download to open in its native app (${res.openMethod}).`);
       }
     } catch (err: unknown) {
       setStatusMessage(err instanceof Error ? err.message : 'Desktop handoff unavailable');
@@ -188,6 +205,35 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
       setStatusMessage(err instanceof Error ? err.message : 'Could not update favorite status');
     } finally {
       setFavoriteLoading(false);
+    }
+  };
+
+  const handleToggleSubscription = async () => {
+    setSubscriptionLoading(true);
+    try {
+      if (isSubscribed) {
+        await kmsApi.subscriptions.unsubscribeDoc(docId);
+        setIsSubscribed(false);
+        setShowSubPrefs(false);
+      } else {
+        const res = await kmsApi.subscriptions.subscribeDoc(docId, subPrefs);
+        setIsSubscribed(true);
+        setShowSubPrefs(false);
+        setStatusMessage('Subscribed to notifications for this document.');
+      }
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : 'Could not update subscription');
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
+
+  const handleUpdateSubPrefs = async (prefs: typeof subPrefs) => {
+    setSubPrefs(prefs);
+    try {
+      await kmsApi.subscriptions.subscribeDoc(docId, prefs);
+    } catch (err: unknown) {
+      setStatusMessage(err instanceof Error ? err.message : 'Could not update preferences');
     }
   };
 
@@ -274,6 +320,41 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
                 <Star className={`w-4 h-4 ${isFavorited ? 'fill-amber-500 text-amber-500' : ''}`} />
               )}
             </button>
+            <div className="relative">
+              <button
+                onClick={() => { if (isSubscribed) setShowSubPrefs(!showSubPrefs); else handleToggleSubscription(); }}
+                disabled={subscriptionLoading}
+                className="p-1.5 rounded hover:bg-kms-slate-100 text-kms-slate-500 hover:text-blue-600 disabled:opacity-50 transition-colors"
+                title={isSubscribed ? 'Notification preferences' : 'Subscribe to notifications'}
+              >
+                {subscriptionLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : isSubscribed ? (
+                  <Bell className="w-4 h-4 text-blue-600" />
+                ) : (
+                  <BellOff className="w-4 h-4" />
+                )}
+              </button>
+              {showSubPrefs && isSubscribed && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-kms-slate-200 rounded-lg shadow-lg p-3 z-50 w-52 space-y-2">
+                  <div className="text-[11px] font-bold text-kms-slate-700 uppercase tracking-wider">Notify me about:</div>
+                  {(['notifyVersions', 'notifyComments', 'notifyShares'] as const).map((key) => (
+                    <label key={key} className="flex items-center gap-2 text-xs text-kms-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={subPrefs[key]}
+                        onChange={(e) => handleUpdateSubPrefs({ ...subPrefs, [key]: e.target.checked })}
+                        className="rounded text-blue-600"
+                      />
+                      {key === 'notifyVersions' ? 'New versions' : key === 'notifyComments' ? 'New comments' : 'Share events'}
+                    </label>
+                  ))}
+                  <button onClick={() => handleToggleSubscription()} className="text-[11px] text-red-600 hover:underline font-medium pt-1">
+                    Unsubscribe
+                  </button>
+                </div>
+              )}
+            </div>
             {canSubmitForApproval && doc.status !== 'UNDER_REVIEW' && (
               <Button
                 variant="outline"

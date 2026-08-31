@@ -6,12 +6,13 @@ import { Breadcrumb } from '@/src/components/ui/Breadcrumb';
 import { Button } from '@/src/components/ui/Button';
 import { Input, Select } from '@/src/components/ui/Input';
 import { Card } from '@/src/components/ui/Card';
-import { Upload, FileText, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { Upload, FileText, FileCheck, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { kmsApi } from '@/src/lib/api';
 
 export default function UploadDocumentPage() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [title, setTitle] = useState('');
   const [department, setDepartment] = useState('Engineering');
   const [classification, setClassification] = useState('INTERNAL');
@@ -20,6 +21,7 @@ export default function UploadDocumentPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [uploadResult, setUploadResult] = useState<{ name: string; success: boolean; message: string }[] | null>(null);
 
   const [documentTypes, setDocumentTypes] = useState<Array<{ id: string; name: string; description?: string }>>([]);
   const [selectedTypeId, setSelectedTypeId] = useState<string>('');
@@ -79,19 +81,44 @@ export default function UploadDocumentPage() {
     setSelectedTypeId(match?.id || '');
   }, [documentTypes]);
 
-  const handleFileDrop = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedFile(file);
-      if (!title) {
-        setTitle(file.name.replace(/\.[^/.]+$/, ''));
-      }
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      setSelectedFiles((prev) => [...prev, ...Array.from(files)]);
     }
   };
 
-  const handleStartUpload = async (e: React.FormEvent) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!selectedFile) return;
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...files]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedFiles.length === 0) return;
 
     const missingRequired = customFields.filter((f) => f.required && !customFieldValues[f.fieldKey]?.trim());
     if (missingRequired.length > 0) {
@@ -100,50 +127,62 @@ export default function UploadDocumentPage() {
     }
 
     setIsUploading(true);
-    setUploadProgress(20);
+    setUploadProgress(0);
     setErrorMessage(null);
+    setUploadResult(null);
 
-    try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      if (title) {
-        formData.append('title', title);
-      }
+    const results: { name: string; success: boolean; message: string }[] = [];
 
-      let deptCode = 'GEN';
-      const matchedDept = departments.find((d) => d.name === department);
-      if (matchedDept?.code) {
-        deptCode = matchedDept.code;
-      } else {
-        const fallbackMap: Record<string, string> = {
-          'Engineering': 'ENG',
-          'IT Security': 'ITSEC',
-          'Human Resources': 'HR',
-          'Finance': 'FIN',
-          'Legal & Compliance': 'LEGAL',
-          'Content Management': 'CONTENT',
-        };
-        deptCode = fallbackMap[department] || 'GEN';
-      }
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      setUploadProgress(Math.round((i / selectedFiles.length) * 100));
 
-      formData.append('departmentCode', deptCode);
-      formData.append('documentTypeName', documentType);
-      formData.append('confidentialityLevel', classification);
-
-      Object.entries(customFieldValues).forEach(([fieldKey, value]) => {
-        if (value) {
-          formData.append(`metadata.${fieldKey}`, value);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        if (title) {
+          formData.append('title', title);
         }
-      });
 
-      setUploadProgress(60);
-      await kmsApi.documents.upload(formData);
-      setUploadProgress(100);
-      setIsUploading(false);
+        let deptCode = 'GEN';
+        const matchedDept = departments.find((d) => d.name === department);
+        if (matchedDept?.code) {
+          deptCode = matchedDept.code;
+        } else {
+          const fallbackMap: Record<string, string> = {
+            'Engineering': 'ENG',
+            'IT Security': 'ITSEC',
+            'Human Resources': 'HR',
+            'Finance': 'FIN',
+            'Legal & Compliance': 'LEGAL',
+            'Content Management': 'CONTENT',
+          };
+          deptCode = fallbackMap[department] || 'GEN';
+        }
+
+        formData.append('departmentCode', deptCode);
+        formData.append('documentTypeName', documentType);
+        formData.append('confidentialityLevel', classification);
+
+        Object.entries(customFieldValues).forEach(([fieldKey, value]) => {
+          if (value) {
+            formData.append(`metadata.${fieldKey}`, value);
+          }
+        });
+
+        await kmsApi.documents.upload(formData);
+        results.push({ name: file.name, success: true, message: 'Uploaded successfully' });
+      } catch (err: unknown) {
+        results.push({ name: file.name, success: false, message: err instanceof Error ? err.message : 'Upload failed' });
+      }
+    }
+
+    setUploadProgress(100);
+    setUploadResult(results);
+    setSelectedFiles([]);
+    setIsUploading(false);
+    if (results.every((r) => r.success)) {
       setUploadSuccess(true);
-    } catch (err: unknown) {
-      setIsUploading(false);
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to upload document');
     }
   };
 
@@ -164,7 +203,8 @@ export default function UploadDocumentPage() {
             <div>
               <h3 className="text-base font-bold text-emerald-900">Upload & Registration Complete</h3>
               <p className="text-xs text-emerald-700 mt-1">
-                Binary payload stored with SHA-256 integrity verification. Queued for background Apache Tika OCR extraction.
+                Document submitted for review. It stays hidden from the Document Library until it is
+                approved by a reviewer. You can track its status under My Documents &amp; My Submissions.
               </p>
             </div>
             <div className="flex justify-center gap-3 pt-2">
@@ -178,10 +218,11 @@ export default function UploadDocumentPage() {
                 size="sm"
                 onClick={() => {
                   setUploadSuccess(false);
-                  setSelectedFile(null);
+                  setSelectedFiles([]);
                   setTitle('');
                   setCustomFieldValues({});
                   setErrorMessage(null);
+                  setUploadResult(null);
                 }}
               >
                 Upload Another File
@@ -189,7 +230,7 @@ export default function UploadDocumentPage() {
             </div>
           </Card>
         ) : (
-          <form onSubmit={handleStartUpload} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {errorMessage && (
               <div className="bg-red-50 border border-red-300 text-red-800 p-4 rounded text-xs flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
@@ -198,35 +239,68 @@ export default function UploadDocumentPage() {
             )}
             {/* Drag & Drop Zone */}
             <Card title="1. Select Document File">
-              <div className="border-2 border-dashed border-kms-slate-300 hover:border-blue-500 rounded-lg p-8 text-center bg-kms-slate-50 hover:bg-blue-50/30 transition-all cursor-pointer relative">
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
+                  isDragging
+                    ? 'border-blue-500 bg-blue-50'
+                    : selectedFiles.length > 0
+                    ? 'border-emerald-400 bg-emerald-50'
+                    : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50'
+                }`}
+                onClick={() => fileInputRef.current?.click()}
+              >
                 <input
+                  ref={fileInputRef}
                   type="file"
-                  onChange={handleFileDrop}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  required
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.gif,.webp,.svg,.zip,.rar"
                 />
-                <Upload className="w-10 h-10 text-blue-600 mx-auto mb-2" />
-                {selectedFile ? (
-                  <div className="space-y-1">
-                    <div className="text-xs font-bold text-kms-slate-900 flex items-center justify-center gap-2">
-                      <FileText className="w-4 h-4 text-blue-700" />
-                      {selectedFile.name}
-                    </div>
-                    <div className="text-[11px] text-kms-slate-500 font-mono">
-                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • {selectedFile.type || 'Binary File'}
-                    </div>
+                {selectedFiles.length > 0 ? (
+                  <div className="space-y-2">
+                    <FileCheck className="w-8 h-8 text-emerald-600 mx-auto" />
+                    <p className="text-sm font-semibold text-emerald-800">{selectedFiles.length} file(s) selected</p>
+                    <p className="text-xs text-slate-500">Click or drag more files to add</p>
                   </div>
                 ) : (
-                  <div>
-                    <p className="text-xs font-semibold text-kms-slate-800">
-                      Drag and drop your document here, or <span className="text-blue-700 underline">browse files</span>
+                  <>
+                    <Upload className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+                    <p className="text-sm font-semibold text-slate-700">
+                      Drag & drop files here, or <span className="text-blue-600">browse files</span>
                     </p>
-                    <p className="text-[11px] text-kms-slate-500 mt-1">
-                      Supports PDF, DOCX, XLSX, PPTX, PNG, JPG, ZIP (Max 500 MB)
-                    </p>
-                  </div>
+                    <p className="text-xs text-slate-400 mt-1">Supports PDF, Office docs, images, and archives</p>
+                  </>
                 )}
               </div>
+
+              {/* Selected Files List */}
+              {selectedFiles.length > 0 && (
+                <div className="space-y-2 mt-4">
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Selected Files</h3>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {selectedFiles.map((file, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                          <span className="truncate font-medium text-slate-800">{file.name}</span>
+                          <span className="text-slate-400 shrink-0">({(file.size / 1024).toFixed(0)} KB)</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); removeFile(idx); }}
+                          className="text-red-500 hover:text-red-700 font-bold ml-2 shrink-0"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Card>
 
             {/* Mandatory Metadata Form */}
@@ -319,12 +393,30 @@ export default function UploadDocumentPage() {
                 type="submit"
                 variant="primary"
                 size="md"
-                disabled={!selectedFile || isUploading || customFields.some((f) => f.required && !customFieldValues[f.fieldKey]?.trim())}
+                disabled={selectedFiles.length === 0 || isUploading || customFields.some((f) => f.required && !customFieldValues[f.fieldKey]?.trim())}
                 icon={isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
               >
-                Start Upload & Complete Registration
+                {isUploading
+                  ? `Uploading ${selectedFiles.length} file(s)...`
+                  : `Upload ${selectedFiles.length > 0 ? selectedFiles.length + ' File(s)' : ''}`}
               </Button>
             </div>
+
+            {/* Upload Results */}
+            {uploadResult && uploadResult.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Upload Results</h3>
+                <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  {uploadResult.map((r, idx) => (
+                    <div key={idx} className={`flex items-center gap-2 p-2 rounded text-xs border ${r.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                      {r.success ? <FileCheck className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                      <span className="font-medium truncate">{r.name}</span>
+                      <span className="ml-auto shrink-0">{r.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </form>
         )}
       </div>

@@ -4,8 +4,11 @@ import com.enterprise.kms.annotation.AuditLog;
 import com.enterprise.kms.entity.Department;
 import com.enterprise.kms.entity.Folder;
 import com.enterprise.kms.entity.User;
+import com.enterprise.kms.entity.Subscription;
 import com.enterprise.kms.repository.DepartmentRepository;
 import com.enterprise.kms.repository.FolderRepository;
+import com.enterprise.kms.repository.SubscriptionRepository;
+import com.enterprise.kms.repository.UserRepository;
 import com.enterprise.kms.service.PermissionService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,13 +29,19 @@ public class FolderController {
     private final FolderRepository folderRepository;
     private final DepartmentRepository departmentRepository;
     private final PermissionService permissionService;
+    private final UserRepository userRepository;
+    private final SubscriptionRepository subscriptionRepository;
 
     public FolderController(FolderRepository folderRepository,
                             DepartmentRepository departmentRepository,
-                            PermissionService permissionService) {
+                            PermissionService permissionService,
+                            UserRepository userRepository,
+                            SubscriptionRepository subscriptionRepository) {
         this.folderRepository = folderRepository;
         this.departmentRepository = departmentRepository;
         this.permissionService = permissionService;
+        this.userRepository = userRepository;
+        this.subscriptionRepository = subscriptionRepository;
     }
 
     /** Folders the caller is allowed to see (FR-16 applied to the folder tree). */
@@ -113,5 +122,73 @@ public class FolderController {
         row.put("isDeleted", folder.getIsDeleted());
         row.put("createdAt", folder.getCreatedAt());
         return row;
+    }
+
+    // ===== FR-26: Folder Subscriptions =====
+
+    @PostMapping("/{id}/subscribe")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<Map<String, Object>> subscribeFolder(
+            @PathVariable("id") UUID folderId,
+            @RequestBody(required = false) Map<String, Boolean> body) {
+        String username = com.enterprise.kms.security.SecurityUtils.getCurrentUsername();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        Subscription sub = subscriptionRepository
+                .findByUserIdAndTargetTypeAndTargetId(user.getId(), "FOLDER", folderId)
+                .orElseGet(() -> {
+                    Subscription s = new Subscription();
+                    s.setUser(user);
+                    s.setTargetType("FOLDER");
+                    s.setTargetId(folderId);
+                    return s;
+                });
+
+        if (body != null) {
+            if (body.containsKey("notifyVersions")) sub.setNotifyVersions(body.get("notifyVersions"));
+            if (body.containsKey("notifyComments")) sub.setNotifyComments(body.get("notifyComments"));
+            if (body.containsKey("notifyShares")) sub.setNotifyShares(body.get("notifyShares"));
+        }
+
+        Subscription saved = subscriptionRepository.save(sub);
+        return ResponseEntity.ok(Map.of(
+                "subscribed", true,
+                "subscriptionId", saved.getId().toString(),
+                "notifyVersions", saved.getNotifyVersions(),
+                "notifyComments", saved.getNotifyComments(),
+                "notifyShares", saved.getNotifyShares()
+        ));
+    }
+
+    @DeleteMapping("/{id}/subscribe")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<Map<String, Object>> unsubscribeFolder(@PathVariable("id") UUID folderId) {
+        String username = com.enterprise.kms.security.SecurityUtils.getCurrentUsername();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        subscriptionRepository.deleteByUserIdAndTargetTypeAndTargetId(user.getId(), "FOLDER", folderId);
+        return ResponseEntity.ok(Map.of("subscribed", false));
+    }
+
+    @GetMapping("/{id}/subscribe/status")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<Map<String, Object>> folderSubscriptionStatus(@PathVariable("id") UUID folderId) {
+        String username = com.enterprise.kms.security.SecurityUtils.getCurrentUsername();
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        var opt = subscriptionRepository.findByUserIdAndTargetTypeAndTargetId(user.getId(), "FOLDER", folderId);
+        if (opt.isPresent()) {
+            var sub = opt.get();
+            return ResponseEntity.ok(Map.of(
+                    "subscribed", true,
+                    "subscriptionId", sub.getId().toString(),
+                    "notifyVersions", sub.getNotifyVersions(),
+                    "notifyComments", sub.getNotifyComments(),
+                    "notifyShares", sub.getNotifyShares()));
+        }
+        return ResponseEntity.ok(Map.of("subscribed", false));
     }
 }
