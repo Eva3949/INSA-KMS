@@ -33,7 +33,7 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/v1/health", "/health/**", "/swagger-ui/**", "/v3/api-docs/**", "/api/v1/shares/**").permitAll()
+                .requestMatchers("/api/v1/health", "/health/**", "/swagger-ui/**", "/v3/api-docs/**", "/api/v1/shares/**", "/api/v1/documents/media/**").permitAll()
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2

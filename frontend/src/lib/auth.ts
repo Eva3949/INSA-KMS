@@ -15,18 +15,35 @@ export interface UserContext {
 }
 
 export function hasRole(userRoles: UserRole[], requiredRole: UserRole): boolean {
+  if (!userRoles || userRoles.length === 0) return false;
   if (userRoles.includes('ROLE_ADMIN')) return true;
   if (userRoles.includes(requiredRole)) return true;
-  // Role hierarchy: higher roles inherit lower role permissions
-  const hierarchy: UserRole[] = ['ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_COMPLIANCE_OFFICER', 'ROLE_IT_SECURITY', 'ROLE_ADMIN'];
-  const requiredIdx = hierarchy.indexOf(requiredRole);
-  if (requiredIdx >= 0) {
-    // Check if user has any role that is at or above the required level
-    return userRoles.some((r) => {
-      const idx = hierarchy.indexOf(r);
-      return idx >= requiredIdx;
-    });
+
+  // ROLE_VIEWER is inherited by all authenticated roles
+  if (requiredRole === 'ROLE_VIEWER') {
+    return userRoles.length > 0;
   }
+
+  // ROLE_CONTRIBUTOR is inherited by ROLE_CONTENT_OWNER
+  if (requiredRole === 'ROLE_CONTRIBUTOR') {
+    return userRoles.includes('ROLE_CONTRIBUTOR') || userRoles.includes('ROLE_CONTENT_OWNER');
+  }
+
+  // ROLE_CONTENT_OWNER is inherited by ROLE_ADMIN
+  if (requiredRole === 'ROLE_CONTENT_OWNER') {
+    return userRoles.includes('ROLE_CONTENT_OWNER');
+  }
+
+  // ROLE_COMPLIANCE_OFFICER is inherited by ROLE_ADMIN
+  if (requiredRole === 'ROLE_COMPLIANCE_OFFICER') {
+    return userRoles.includes('ROLE_COMPLIANCE_OFFICER');
+  }
+
+  // ROLE_IT_SECURITY is inherited by ROLE_ADMIN
+  if (requiredRole === 'ROLE_IT_SECURITY') {
+    return userRoles.includes('ROLE_IT_SECURITY');
+  }
+
   return false;
 }
 

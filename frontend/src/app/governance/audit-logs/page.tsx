@@ -56,7 +56,7 @@ export default function SecurityAuditLogsPage() {
     if (filterTo) params.set('to', new Date(filterTo).toISOString());
 
     const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
-    fetch(`${API_BASE}/admin/security/events?${params.toString()}`, {
+    fetch(`${API_BASE}/governance/audit-logs?${params.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
       .then((res) => {
@@ -142,7 +142,7 @@ export default function SecurityAuditLogsPage() {
   ];
 
   return (
-    <AppShell requiredRole="ROLE_IT_SECURITY">
+    <AppShell requiredRole="ROLE_COMPLIANCE_OFFICER">
       <div className="space-y-5">
         <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
           <div>

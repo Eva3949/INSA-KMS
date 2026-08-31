@@ -344,10 +344,138 @@ public class DocumentService {
             row.put("mimeType", version.getMimeType());
         }
 
-        // FR-29: is this document frozen under an active legal hold?
+        List<com.enterprise.kms.entity.DocumentMetadata> metadatas = documentMetadataRepository.findByDocumentId(doc.getId());
+        Map<String, String> metaMap = new LinkedHashMap<>();
+        for (com.enterprise.kms.entity.DocumentMetadata m : metadatas) {
+            metaMap.put(m.getMetadataKey(), m.getMetadataValue());
+        }
+        row.put("metadata", metaMap);
+        row.put("executiveSummary", metaMap.getOrDefault("executiveSummary", ""));
+        row.put("category", metaMap.getOrDefault("category", "General"));
+        row.put("knowledgeType", metaMap.getOrDefault("knowledgeType", doc.getDocumentType() != null ? doc.getDocumentType().getName() : "Document"));
+        row.put("reviewFrequencyDays", metaMap.getOrDefault("reviewFrequencyDays", "365"));
+
+        boolean isArticle = "text/markdown".equalsIgnoreCase(doc.getCurrentVersion() != null ? doc.getCurrentVersion().getMimeType() : "")
+                || metaMap.containsKey("executiveSummary")
+                || "Article".equalsIgnoreCase(doc.getDocumentType() != null ? doc.getDocumentType().getName() : "")
+                || "SOP".equalsIgnoreCase(doc.getDocumentType() != null ? doc.getDocumentType().getName() : "");
+        row.put("isArticle", isArticle);
+        row.put("articleContent", doc.getCurrentVersion() != null ? doc.getCurrentVersion().getExtractedText() : "");
+
         row.put("legalHold", legalHoldItemRepository.existsByIdDocumentId(doc.getId()));
-        row.put("tags", findTagNames(doc.getId()));
+        List<String> tagsList = findTagNames(doc.getId());
+        if (tagsList.isEmpty() && metaMap.containsKey("tags") && !metaMap.get("tags").isBlank()) {
+            tagsList = java.util.Arrays.stream(metaMap.get("tags").split(","))
+                    .map(String::trim).filter(s -> !s.isBlank()).toList();
+        }
+        row.put("tags", tagsList);
         return row;
+    }
+
+    @Transactional
+    public Document createArticle(Map<String, Object> payload, String username) {
+        String title = (String) payload.getOrDefault("title", "Untitled Article");
+        String category = (String) payload.getOrDefault("category", "General");
+        String knowledgeType = (String) payload.getOrDefault("knowledgeType", "SOP");
+        String confidentialityLevel = (String) payload.getOrDefault("confidentialityLevel", "INTERNAL");
+        String reviewFrequencyDays = String.valueOf(payload.getOrDefault("reviewFrequencyDays", "365"));
+        String executiveSummary = (String) payload.getOrDefault("executiveSummary", "");
+        String tags = (String) payload.getOrDefault("tags", "");
+        String content = (String) payload.getOrDefault("content", "");
+        boolean isDraft = Boolean.TRUE.equals(payload.get("isDraft"));
+        String departmentCode = (String) payload.getOrDefault("departmentCode", "ITSEC");
+
+        String effectiveUsername = (username != null && !username.isBlank()) ? username : "system";
+        User author = userRepository.findByUsername(effectiveUsername)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User " + effectiveUsername + " not found"));
+
+        Department dept = departmentRepository.findByCode(departmentCode)
+                .orElseGet(() -> author.getDepartment() != null ? author.getDepartment() : departmentRepository.findAll().get(0));
+
+        DocumentType docType = documentTypeRepository.findByName(knowledgeType)
+                .or(() -> documentTypeRepository.findByName("Article"))
+                .or(() -> documentTypeRepository.findByName("Policy"))
+                .orElseGet(() -> documentTypeRepository.findAll().get(0));
+
+        Document doc = new Document();
+        doc.setTitle(title);
+        doc.setAuthor(author);
+        doc.setOwnerDepartment(dept);
+        doc.setDocumentType(docType);
+        doc.setConfidentialityLevel(confidentialityLevel);
+        doc.setStatus(isDraft ? "DRAFT" : "UNDER_REVIEW");
+        doc = documentRepository.save(doc);
+
+        String fileName = sanitizeFileName(title) + ".md";
+        byte[] markdownBytes = content.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        StorageObject storageObject = storageService.storeFile(new ByteArrayMultipartFile(
+                fileName,
+                "text/markdown",
+                markdownBytes
+        ));
+
+        DocumentVersion version = new DocumentVersion();
+        version.setDocument(doc);
+        version.setVersionNumber(1);
+        version.setFileName(fileName);
+        version.setMimeType("text/markdown");
+        version.setStorageObject(storageObject);
+        version.setCreatedBy(author);
+        version.setChangeSummary(isDraft ? "Initial draft creation" : "Article submission for review");
+        version.setExtractedText(content);
+        version = documentVersionRepository.save(version);
+
+        doc.setCurrentVersion(version);
+        doc = documentRepository.save(doc);
+
+        saveMetadataKey(doc, "category", category);
+        saveMetadataKey(doc, "knowledgeType", knowledgeType);
+        saveMetadataKey(doc, "executiveSummary", executiveSummary);
+        saveMetadataKey(doc, "tags", tags);
+        saveMetadataKey(doc, "reviewFrequencyDays", reviewFrequencyDays);
+
+        if (!isDraft) {
+            approvalService.autoSubmitNewDocument(doc, effectiveUsername);
+        }
+
+        return doc;
+    }
+
+    private void saveMetadataKey(Document doc, String key, String value) {
+        if (value == null) return;
+        com.enterprise.kms.entity.DocumentMetadata m = new com.enterprise.kms.entity.DocumentMetadata();
+        m.setDocument(doc);
+        m.setMetadataKey(key);
+        m.setMetadataValue(value);
+        documentMetadataRepository.save(m);
+    }
+
+    private String sanitizeFileName(String name) {
+        if (name == null || name.isBlank()) return "article";
+        return name.replaceAll("[\\\\/:*?\"<>|\\s]", "_");
+    }
+
+    private static class ByteArrayMultipartFile implements MultipartFile {
+        private final String name;
+        private final String contentType;
+        private final byte[] content;
+
+        public ByteArrayMultipartFile(String name, String contentType, byte[] content) {
+            this.name = name;
+            this.contentType = contentType;
+            this.content = content;
+        }
+
+        @Override public String getName() { return name; }
+        @Override public String getOriginalFilename() { return name; }
+        @Override public String getContentType() { return contentType; }
+        @Override public boolean isEmpty() { return content == null || content.length == 0; }
+        @Override public long getSize() { return content.length; }
+        @Override public byte[] getBytes() { return content; }
+        @Override public java.io.InputStream getInputStream() { return new java.io.ByteArrayInputStream(content); }
+        @Override public void transferTo(java.io.File dest) throws java.io.IOException, IllegalStateException {
+            java.nio.file.Files.write(dest.toPath(), content);
+        }
     }
 
     /** Taxonomy tags attached to the document (FR-03). */

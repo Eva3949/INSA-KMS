@@ -10,7 +10,7 @@ import { Bell, Check, CheckCheck } from 'lucide-react';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
 
-interface Notification {
+interface NotificationItem {
   id: string;
   title: string;
   message: string;
@@ -27,7 +27,7 @@ function formatTimestamp(iso: string): string {
 }
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +38,12 @@ export default function NotificationsPage() {
     try {
       const token = sessionStorage.getItem('kms_access_token');
       const res = await fetch(`${API_BASE_URL}/notifications`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`Failed to fetch notifications (${res.status})`);
-      const data: Notification[] = await res.json();
-      setNotifications(data);
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : data?.content ?? [];
+      setNotifications(list);
     } catch (err: any) {
       setError(err.message || 'An unexpected error occurred.');
     } finally {
@@ -54,11 +55,12 @@ export default function NotificationsPage() {
     try {
       const token = sessionStorage.getItem('kms_access_token');
       const res = await fetch(`${API_BASE_URL}/notifications/unread-count`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.ok) {
-        const data: { count: number } = await res.json();
-        setUnreadCount(data.count);
+        const data = await res.json();
+        const count = typeof data === 'number' ? data : data?.count ?? data?.unreadCount ?? 0;
+        setUnreadCount(count);
       }
     } catch {
       // silent
@@ -75,7 +77,7 @@ export default function NotificationsPage() {
       const token = sessionStorage.getItem('kms_access_token');
       const res = await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.ok) {
         setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
@@ -91,7 +93,7 @@ export default function NotificationsPage() {
       const token = sessionStorage.getItem('kms_access_token');
       const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.ok) {
         setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));

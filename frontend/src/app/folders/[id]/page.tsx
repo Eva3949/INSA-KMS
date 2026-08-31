@@ -143,8 +143,13 @@ export default function FolderExplorerPage({ params }: { params: { id: string } 
               New Subfolder
             </Button>
             <Link href={`/upload?folderId=${folderId}`}>
-              <Button variant="primary" size="sm" icon={<Plus className="w-4 h-4" />}>
-                Upload to Folder
+              <Button variant="outline" size="sm" icon={<Plus className="w-4 h-4" />}>
+                Upload Document
+              </Button>
+            </Link>
+            <Link href="/articles/create">
+              <Button variant="primary" size="sm" icon={<FileText className="w-4 h-4" />}>
+                Create Article
               </Button>
             </Link>
           </div>

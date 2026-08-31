@@ -272,8 +272,13 @@ export default function MyDocumentsPage() {
           </div>
           <div className="flex items-center gap-2">
             <Link href="/upload">
-              <Button variant="primary" size="sm" icon={<Upload className="w-4 h-4" />}>
-                Upload
+              <Button variant="outline" size="sm" icon={<Upload className="w-4 h-4" />}>
+                Upload Document
+              </Button>
+            </Link>
+            <Link href="/articles/create">
+              <Button variant="primary" size="sm" icon={<FileText className="w-4 h-4" />}>
+                Create Article
               </Button>
             </Link>
             <Button variant="outline" size="sm" icon={<RefreshCw className="w-4 h-4" />} onClick={() => load(page)}>

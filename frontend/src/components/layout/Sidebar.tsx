@@ -43,6 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
   const mainNav = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard, role: 'ROLE_VIEWER' },
     { href: '/library', label: 'Document Library', icon: Folder, role: 'ROLE_VIEWER' },
+    { href: '/articles/create', label: 'Create Article', icon: FileText, role: 'ROLE_CONTRIBUTOR' },
     { href: '/folders', label: 'Folders', icon: Folder, role: 'ROLE_CONTRIBUTOR' },
     { href: '/search', label: 'Advanced Search', icon: Search, role: 'ROLE_VIEWER' },
     { href: '/search/saved', label: 'Saved Searches & Alerts', icon: BookmarkCheck, role: 'ROLE_VIEWER' },
@@ -60,7 +61,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
   const complianceNav = [
     { href: '/governance/retention', label: 'Retention Policies', icon: FileLock2, role: 'ROLE_COMPLIANCE_OFFICER' },
     { href: '/governance/legal-holds', label: 'Legal Holds', icon: ShieldCheck, role: 'ROLE_COMPLIANCE_OFFICER' },
-    { href: '/governance/audit-logs', label: 'Audit Logs', icon: FileText, role: 'ROLE_IT_SECURITY' },
+    { href: '/governance/audit-logs', label: 'Audit Logs', icon: FileText, role: 'ROLE_COMPLIANCE_OFFICER' },
+    { href: '/governance/reports', label: 'Compliance Reports', icon: BarChart2, role: 'ROLE_COMPLIANCE_OFFICER' },
   ];
 
   const adminNav = [
@@ -133,16 +135,28 @@ useEffect(() => {
 
   return (
     <aside className="w-64 bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 h-screen sticky top-0 shadow-2xs">
-      {/* Branding with Official INSA Logo */}
-      <Link href="/" className="h-16 px-4 flex items-center gap-3 border-b border-slate-200 bg-white hover:bg-slate-50 transition-colors">
+      {/* Branding with Official INSA Logo & Right-Aligned Title */}
+      <Link
+        href="/"
+        className="h-16 px-3.5 flex items-center justify-between border-b border-slate-200 bg-white hover:bg-slate-50/80 transition-colors group"
+      >
         <img
           src="/images/insalogo.png"
-          alt="INSA"
-          className="h-9 w-auto object-contain"
+          alt="INSA Logo"
+          className="h-8.5 w-auto max-w-[135px] object-contain shrink-0"
         />
-        <div>
-          <h1 className="text-sm font-black text-blue-900 tracking-tight">INSA KMS</h1>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Knowledge System</p>
+        <div className="flex flex-col items-end text-right shrink-0">
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-black tracking-tight text-slate-900 group-hover:text-blue-700 transition-colors">
+              INSA
+            </span>
+            <span className="text-[9px] font-black px-1.5 py-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-md tracking-wider uppercase shadow-2xs">
+              KMS
+            </span>
+          </div>
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+            Knowledge
+          </span>
         </div>
       </Link>
 

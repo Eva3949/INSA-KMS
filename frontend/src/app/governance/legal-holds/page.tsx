@@ -11,7 +11,7 @@ import { Modal } from '@/src/components/ui/Modal';
 import { Input } from '@/src/components/ui/Input';
 import { LoadingState } from '@/src/components/ui/States';
 import { kmsApi } from '@/src/lib/api';
-import { ShieldAlert, Plus, Unlock, FolderOpen, Trash2 } from 'lucide-react';
+import { ShieldAlert, Plus, Unlock, FolderOpen, Trash2, Search, FileText } from 'lucide-react';
 
 interface HoldRow {
   id: string;
@@ -33,6 +33,14 @@ interface HoldItem {
   placedAt: string;
 }
 
+interface DocResult {
+  id: string;
+  title: string;
+  departmentName?: string;
+  confidentialityLevel?: string;
+  status?: string;
+}
+
 export default function LegalHoldsPage() {
   const [holds, setHolds] = React.useState<HoldRow[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -49,6 +57,12 @@ export default function LegalHoldsPage() {
   const [items, setItems] = React.useState<HoldItem[]>([]);
   const [isItemsLoading, setIsItemsLoading] = React.useState(false);
   const [newDocumentId, setNewDocumentId] = React.useState('');
+
+  // Document Picker search states
+  const [isPickerOpen, setIsPickerOpen] = React.useState(false);
+  const [pickerQuery, setPickerQuery] = React.useState('');
+  const [pickerResults, setPickerResults] = React.useState<DocResult[]>([]);
+  const [isPickerSearching, setIsPickerSearching] = React.useState(false);
 
   const load = React.useCallback(() => {
     setIsLoading(true);
@@ -115,15 +129,17 @@ export default function LegalHoldsPage() {
     }
   };
 
-  const handleAddItem = async () => {
-    if (!itemsHold || !newDocumentId.trim()) return;
+  const handleAddItem = async (docIdToAdd?: string) => {
+    const docId = docIdToAdd || newDocumentId.trim();
+    if (!itemsHold || !docId) return;
     try {
-      await kmsApi.governance.addDocumentToHold(itemsHold.id, newDocumentId.trim());
+      await kmsApi.governance.addDocumentToHold(itemsHold.id, docId);
       setNewDocumentId('');
       const data = await kmsApi.governance.getHoldItems(itemsHold.id);
       setItems(data as HoldItem[]);
       setNotice('Document frozen under legal hold.');
       setError(null);
+      setIsPickerOpen(false);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to add document');
     }
@@ -140,6 +156,33 @@ export default function LegalHoldsPage() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to remove document');
     }
+  };
+
+  const handleSearchPickerDocs = async () => {
+    setIsPickerSearching(true);
+    try {
+      const query = pickerQuery.trim();
+      let res: any;
+      if (query) {
+        res = await kmsApi.search.quick(query);
+        const docs = Array.isArray(res) ? res : res?.documents || res?.content || [];
+        setPickerResults(docs as DocResult[]);
+      } else {
+        res = await kmsApi.documents.list(0, 30);
+        const docs = Array.isArray(res) ? res : res?.content || [];
+        setPickerResults(docs as DocResult[]);
+      }
+    } catch {
+      setPickerResults([]);
+    } finally {
+      setIsPickerSearching(false);
+    }
+  };
+
+  const openPicker = () => {
+    setIsPickerOpen(true);
+    setPickerQuery('');
+    handleSearchPickerDocs();
   };
 
   const columns = [
@@ -247,6 +290,7 @@ export default function LegalHoldsPage() {
           </div>
         </Modal>
 
+        {/* Managed Documents in Case Modal */}
         <Modal
           isOpen={itemsHold !== null}
           onClose={() => setItemsHold(null)}
@@ -255,16 +299,24 @@ export default function LegalHoldsPage() {
         >
           <div className="space-y-4">
             {itemsHold?.isActive && (
-              <div className="flex items-end gap-2">
-                <Input
-                  label="Add Document by ID"
-                  value={newDocumentId}
-                  onChange={(e) => setNewDocumentId(e.target.value)}
-                  helperText="Paste the document UUID to freeze it under this hold"
-                />
-                <Button variant="primary" size="sm" onClick={handleAddItem} disabled={!newDocumentId.trim()}>
-                  Freeze
-                </Button>
+              <div className="space-y-3 p-3 bg-kms-slate-50 border border-kms-slate-200 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-kms-slate-800">Add Documents to Hold Case</span>
+                  <Button variant="primary" size="sm" icon={<Search className="w-3.5 h-3.5" />} onClick={openPicker}>
+                    Search &amp; Pick Document
+                  </Button>
+                </div>
+                <div className="flex items-end gap-2">
+                  <Input
+                    label="Direct Document ID (UUID)"
+                    value={newDocumentId}
+                    onChange={(e) => setNewDocumentId(e.target.value)}
+                    placeholder="Enter document UUID..."
+                  />
+                  <Button variant="primary" size="sm" onClick={() => handleAddItem()} disabled={!newDocumentId.trim()}>
+                    Freeze
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -291,6 +343,53 @@ export default function LegalHoldsPage() {
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Modal>
+
+        {/* Document Search & Picker Modal */}
+        <Modal
+          isOpen={isPickerOpen}
+          onClose={() => setIsPickerOpen(false)}
+          title="Select Document to Attach to Legal Hold"
+          maxWidth="xl"
+        >
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Input
+                label="Search Documents"
+                value={pickerQuery}
+                onChange={(e) => setPickerQuery(e.target.value)}
+                placeholder="Search by document title..."
+              />
+              <Button className="mt-6" variant="secondary" size="sm" onClick={handleSearchPickerDocs}>
+                Search
+              </Button>
+            </div>
+
+            {isPickerSearching ? (
+              <LoadingState message="Searching document repository..." />
+            ) : pickerResults.length === 0 ? (
+              <p className="text-xs text-kms-slate-500 text-center py-6">No documents found matching query.</p>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {pickerResults.map((doc) => (
+                  <div key={doc.id} className="flex items-center justify-between bg-white border border-kms-slate-200 rounded p-3 text-xs hover:border-blue-300">
+                    <div>
+                      <div className="font-bold text-kms-slate-900 flex items-center gap-1.5">
+                        <FileText className="w-4 h-4 text-blue-600" />
+                        {doc.title}
+                      </div>
+                      <div className="text-[11px] text-kms-slate-500 font-mono mt-0.5">
+                        ID: {doc.id} · Dept: {doc.departmentName || 'General'}
+                      </div>
+                    </div>
+                    <Button variant="danger" size="sm" onClick={() => handleAddItem(doc.id)}>
+                      Freeze under Hold
+                    </Button>
                   </div>
                 ))}
               </div>

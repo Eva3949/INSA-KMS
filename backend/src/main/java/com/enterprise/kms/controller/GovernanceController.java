@@ -9,6 +9,7 @@ import com.enterprise.kms.repository.AuditLogRepository;
 import com.enterprise.kms.security.SecurityUtils;
 import com.enterprise.kms.service.AuditService;
 import com.enterprise.kms.service.GovernanceService;
+import com.enterprise.kms.service.RetentionDispositionJob;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -28,13 +29,16 @@ public class GovernanceController {
     private final GovernanceService governanceService;
     private final AuditService auditService;
     private final AuditLogRepository auditLogRepository;
+    private final RetentionDispositionJob retentionDispositionJob;
 
     public GovernanceController(GovernanceService governanceService,
                                 AuditService auditService,
-                                AuditLogRepository auditLogRepository) {
+                                AuditLogRepository auditLogRepository,
+                                RetentionDispositionJob retentionDispositionJob) {
         this.governanceService = governanceService;
         this.auditService = auditService;
         this.auditLogRepository = auditLogRepository;
+        this.retentionDispositionJob = retentionDispositionJob;
     }
 
     // ================= Retention & Disposition (FR-28) =================
@@ -44,6 +48,13 @@ public class GovernanceController {
     @AuditLog(action = "RETENTION_VIEW", resourceType = "GOVERNANCE")
     public ResponseEntity<List<RetentionPolicy>> getRetentionPolicies() {
         return ResponseEntity.ok(governanceService.getRetentionPolicies());
+    }
+
+    @GetMapping("/retention/candidates")
+    @PreAuthorize("hasAnyRole('ROLE_COMPLIANCE_OFFICER', 'ROLE_ADMIN')")
+    @AuditLog(action = "RETENTION_CANDIDATES_VIEW", resourceType = "GOVERNANCE")
+    public ResponseEntity<List<Map<String, Object>>> getRetentionCandidates() {
+        return ResponseEntity.ok(retentionDispositionJob.getPendingDispositionCandidates());
     }
 
     @PostMapping("/retention")
@@ -148,29 +159,31 @@ public class GovernanceController {
     // ================= Audit Logs (FR-22 / Section 7 SIEM export) =================
 
     @GetMapping("/audit-logs")
-    @PreAuthorize("hasAnyRole('ROLE_IT_SECURITY', 'ROLE_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_IT_SECURITY', 'ROLE_COMPLIANCE_OFFICER', 'ROLE_ADMIN')")
     @AuditLog(action = "AUDIT_LOG_QUERY", resourceType = "AUDIT")
     public ResponseEntity<Page<AuditLogEntity>> getAuditLogs(
-            Pageable pageable,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size,
             @RequestParam(name = "action", required = false) String action,
             @RequestParam(name = "user", required = false) String user,
             @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
             @RequestParam(name = "from", required = false) java.time.OffsetDateTime from,
             @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE_TIME)
             @RequestParam(name = "to", required = false) java.time.OffsetDateTime to) {
+        org.springframework.data.domain.PageRequest request = org.springframework.data.domain.PageRequest.of(
+                Math.max(page, 0), Math.min(Math.max(size, 1), 100), org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt"));
         boolean filtered = (action != null && !action.isBlank()) || (user != null && !user.isBlank())
                 || from != null || to != null;
         if (filtered) {
             return ResponseEntity.ok(auditLogRepository.findFiltered(
                     (action != null && !action.isBlank()) ? action : null,
-                    (user != null && !user.isBlank()) ? user : null, from, to,
-                    org.springframework.data.domain.PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())));
+                    (user != null && !user.isBlank()) ? user : null, from, to, request));
         }
-        return ResponseEntity.ok(auditService.getAuditLogs(pageable));
+        return ResponseEntity.ok(auditLogRepository.findAll(request));
     }
 
     @GetMapping("/audit-logs/export")
-    @PreAuthorize("hasAnyRole('ROLE_IT_SECURITY', 'ROLE_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_IT_SECURITY', 'ROLE_COMPLIANCE_OFFICER', 'ROLE_ADMIN')")
     @AuditLog(action = "AUDIT_LOG_EXPORTED", resourceType = "AUDIT")
     public ResponseEntity<byte[]> exportAuditLogs(
             @RequestParam(value = "since", required = false)
@@ -207,7 +220,8 @@ public class GovernanceController {
         }
         String text = value.toString();
         if (text.contains(",") || text.contains("\"") || text.contains("\n")) {
-            return "\"" + text.replace("\"", "\"\"") + "\"";
+            text = text.replace("\"", "\"\"");
+            return "\"" + text + "\"";
         }
         return text;
     }

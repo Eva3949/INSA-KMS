@@ -117,4 +117,42 @@ public class RetentionDispositionJob {
     public boolean isDocumentUnderLegalHold(UUID documentId) {
         return legalHoldItemRepository.existsByIdDocumentId(documentId);
     }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getPendingDispositionCandidates() {
+        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        List<RetentionPolicy> policies = retentionPolicyRepository.findAll().stream()
+                .filter(p -> Boolean.TRUE.equals(p.getIsActive()))
+                .filter(p -> p.getRetentionDays() != null && p.getRetentionDays() > 0)
+                .toList();
+
+        OffsetDateTime now = OffsetDateTime.now();
+        for (RetentionPolicy policy : policies) {
+            OffsetDateTime cutoff = now.minusDays(policy.getRetentionDays());
+            List<Document> candidates = policy.getDocumentType() != null
+                    ? documentRepository.findByDocumentTypeIdAndIsDeletedFalse(policy.getDocumentType().getId())
+                    : documentRepository.findAll().stream().filter(d -> !Boolean.TRUE.equals(d.getIsDeleted())).toList();
+
+            for (Document doc : candidates) {
+                OffsetDateTime referenceDate = doc.getUpdatedAt() != null ? doc.getUpdatedAt() : doc.getCreatedAt();
+                if (referenceDate == null || referenceDate.isAfter(cutoff)) {
+                    continue;
+                }
+                boolean onHold = legalHoldItemRepository.existsByIdDocumentId(doc.getId());
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("documentId", doc.getId().toString());
+                map.put("title", doc.getTitle());
+                map.put("policyId", policy.getId().toString());
+                map.put("policyName", policy.getName());
+                map.put("dispositionAction", policy.getDispositionAction() != null ? policy.getDispositionAction() : "ARCHIVE");
+                map.put("documentStatus", doc.getStatus());
+                map.put("isLegalHoldActive", onHold);
+                map.put("referenceDate", referenceDate.toString());
+                map.put("retentionDays", policy.getRetentionDays());
+                result.add(map);
+            }
+        }
+        return result;
+    }
 }
+

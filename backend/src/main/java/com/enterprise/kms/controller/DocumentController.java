@@ -41,6 +41,8 @@ public class DocumentController {
     private final DocumentShareRepository documentShareRepository;
     private final SubscriptionRepository subscriptionRepository;
     private final DocumentRepository documentRepository;
+    private final com.enterprise.kms.service.StorageService storageService;
+    private final com.enterprise.kms.repository.StorageObjectRepository storageObjectRepository;
 
     public DocumentController(DocumentService documentService, PermissionService permissionService,
                               com.enterprise.kms.service.SystemSettingService systemSettingService,
@@ -51,7 +53,9 @@ public class DocumentController {
                               DocumentFavoriteRepository documentFavoriteRepository,
                               DocumentShareRepository documentShareRepository,
                               SubscriptionRepository subscriptionRepository,
-                              DocumentRepository documentRepository) {
+                              DocumentRepository documentRepository,
+                              com.enterprise.kms.service.StorageService storageService,
+                              com.enterprise.kms.repository.StorageObjectRepository storageObjectRepository) {
         this.documentService = documentService;
         this.permissionService = permissionService;
         this.systemSettingService = systemSettingService;
@@ -63,6 +67,8 @@ public class DocumentController {
         this.documentShareRepository = documentShareRepository;
         this.subscriptionRepository = subscriptionRepository;
         this.documentRepository = documentRepository;
+        this.storageService = storageService;
+        this.storageObjectRepository = storageObjectRepository;
     }
 
     @GetMapping("/{id}/metadata")
@@ -121,6 +127,69 @@ public class DocumentController {
         String username = SecurityUtils.getCurrentUsername();
         Document doc = documentService.createDocument(file, title, departmentCode, documentTypeName, confidentialityLevel, username);
         return ResponseEntity.ok(documentService.toResponse(doc));
+    }
+
+    @PostMapping("/articles")
+    @PreAuthorize("hasAnyRole('ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    @AuditLog(action = "ARTICLE_CREATE", resourceType = "DOCUMENT")
+    public ResponseEntity<java.util.Map<String, Object>> createArticle(@RequestBody java.util.Map<String, Object> body) {
+        String username = SecurityUtils.getCurrentUsername();
+        Document doc = documentService.createArticle(body, username);
+        return ResponseEntity.ok(documentService.toResponse(doc));
+    }
+
+    @PostMapping("/media-upload")
+    @PreAuthorize("hasAnyRole('ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    public ResponseEntity<java.util.Map<String, String>> uploadArticleMedia(@RequestParam("file") MultipartFile file) {
+        java.util.Map<String, String> res = storageService.storePublicMedia(file);
+        return ResponseEntity.ok(res);
+    }
+
+    @GetMapping("/media/{idOrPath:.+}")
+    @org.springframework.web.bind.annotation.CrossOrigin(origins = "*")
+    public ResponseEntity<org.springframework.core.io.InputStreamResource> streamMedia(@PathVariable("idOrPath") String idOrPath) {
+        try {
+            String targetPath = idOrPath;
+            try {
+                UUID id = UUID.fromString(idOrPath);
+                com.enterprise.kms.entity.StorageObject obj = storageObjectRepository.findById(id).orElse(null);
+                if (obj != null) {
+                    targetPath = obj.getStoragePath();
+                }
+            } catch (Exception ignored) {}
+
+            if (!storageService.exists(targetPath)) {
+                java.nio.file.Path dir = storageService.getStorageLocation();
+                if (java.nio.file.Files.exists(dir)) {
+                    try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files.list(dir)) {
+                        java.util.Optional<java.nio.file.Path> match = stream
+                                .filter(p -> p.getFileName().toString().contains(idOrPath) || idOrPath.contains(p.getFileName().toString()))
+                                .findFirst();
+                        if (match.isPresent()) {
+                            targetPath = match.get().getFileName().toString();
+                        }
+                    }
+                }
+            }
+
+            java.io.InputStream is = storageService.retrieve(targetPath);
+
+            String contentType = "application/octet-stream";
+            String lower = targetPath.toLowerCase();
+            if (lower.endsWith(".png")) contentType = "image/png";
+            else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) contentType = "image/jpeg";
+            else if (lower.endsWith(".webp")) contentType = "image/webp";
+            else if (lower.endsWith(".gif")) contentType = "image/gif";
+            else if (lower.endsWith(".mp4")) contentType = "video/mp4";
+            else if (lower.endsWith(".webm")) contentType = "video/webm";
+
+            return ResponseEntity.ok()
+                    .header(org.springframework.http.HttpHeaders.CONTENT_TYPE, contentType)
+                    .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "inline")
+                    .body(new org.springframework.core.io.InputStreamResource(is));
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @DeleteMapping("/{id}")

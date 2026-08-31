@@ -81,6 +81,34 @@ export const kmsApi = {
       }
       return res.json();
     },
+    createArticle: (payload: {
+      title: string;
+      category: string;
+      knowledgeType: string;
+      confidentialityLevel: string;
+      reviewFrequencyDays: number;
+      executiveSummary: string;
+      tags: string;
+      content: string;
+      isDraft: boolean;
+      departmentCode?: string;
+    }) => fetchApi<any>('/documents/articles', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+    uploadMedia: async (formData: FormData) => {
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE_URL}/documents/media-upload`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      if (!res.ok) throw new Error(`Media upload failed: ${res.statusText}`);
+      return res.json();
+    },
     bulk: (payload: { operation: string; documentIds: string[]; targetFolderId?: string; tags?: string[]; confidentialityLevel?: string }) => fetchApi<any>('/documents/bulk', {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -198,6 +226,7 @@ export const kmsApi = {
   // Governance & Compliance
   governance: {
     getRetentionPolicies: () => fetchApi<any[]>('/governance/retention'),
+    getRetentionCandidates: () => fetchApi<any[]>('/governance/retention/candidates'),
     createRetentionPolicy: (payload: { name: string; description?: string; documentTypeId?: string; retentionDays: number; dispositionAction?: string }) =>
       fetchApi<any>('/governance/retention', { method: 'POST', body: JSON.stringify(payload) }),
     updateRetentionPolicy: (id: string, payload: Record<string, unknown>) =>

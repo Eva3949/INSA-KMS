@@ -31,6 +31,7 @@ public class ApprovalService {
     private final DocumentApprovalRepository documentApprovalRepository;
     private final DocumentRepository documentRepository;
     private final AuditService auditService;
+    private final NotificationService notificationService;
 
     public ApprovalService(ApprovalWorkflowTemplateRepository templateRepository,
                            ApprovalTemplateStepRepository templateStepRepository,
@@ -40,7 +41,8 @@ public class ApprovalService {
                            ApprovalStepRepository approvalStepRepository,
                            DocumentApprovalRepository documentApprovalRepository,
                            DocumentRepository documentRepository,
-                           AuditService auditService) {
+                           AuditService auditService,
+                           NotificationService notificationService) {
         this.templateRepository = templateRepository;
         this.templateStepRepository = templateStepRepository;
         this.documentTypeRepository = documentTypeRepository;
@@ -50,6 +52,7 @@ public class ApprovalService {
         this.documentApprovalRepository = documentApprovalRepository;
         this.documentRepository = documentRepository;
         this.auditService = auditService;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -227,6 +230,13 @@ public class ApprovalService {
                 "DOCUMENT_SUBMITTED_FOR_APPROVAL", "DOCUMENT", documentId.toString(), null,
                 "{\"workflowId\":\"" + workflow.getId() + "\",\"templateName\":\"" + template.getName() + "\"}");
 
+        if (notificationService != null) {
+            notificationService.sendNotification(username, "Approval Workflow Submitted",
+                    "Your document '" + doc.getTitle() + "' was submitted for approval workflow review.");
+            notificationService.sendNotificationToRole("ROLE_CONTENT_OWNER", "Pending Document Approval",
+                    "New document '" + doc.getTitle() + "' requires review in your Approval Inbox.");
+        }
+
         return describeWorkflow(workflow);
     }
 
@@ -337,6 +347,11 @@ public class ApprovalService {
             Document doc = workflow.getDocument();
             doc.setStatus("DRAFT");
             documentRepository.save(doc);
+            if (notificationService != null && workflow.getSubmittedBy() != null) {
+                notificationService.sendNotificationToUser(workflow.getSubmittedBy(),
+                        "Document Approval Rejected",
+                        "Your document '" + doc.getTitle() + "' was rejected by " + username + ".");
+            }
             return describeWorkflow(workflow);
         }
 
@@ -353,6 +368,11 @@ public class ApprovalService {
             auditService.recordAuditLog(username, null,
                     "DOCUMENT_APPROVAL_COMPLETED", "DOCUMENT", doc.getId().toString(), null,
                     "{\"workflowId\":\"" + workflow.getId() + "\"}");
+            if (notificationService != null && workflow.getSubmittedBy() != null) {
+                notificationService.sendNotificationToUser(workflow.getSubmittedBy(),
+                        "Document Approved & Published",
+                        "Your document '" + doc.getTitle() + "' has been fully approved and published.");
+            }
         } else {
             ApprovalStep nextStep = allSteps.stream()
                     .filter(s -> "WAITING".equals(s.getStatus()))

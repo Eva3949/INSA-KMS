@@ -189,12 +189,19 @@ export default function UploadDocumentPage() {
   return (
     <AppShell>
       <div className="space-y-5 max-w-4xl mx-auto">
-        <div className="border-b border-kms-slate-200 pb-3">
-          <Breadcrumb items={[{ label: 'Document Library', href: '/library' }, { label: 'Upload Document' }]} />
-          <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
-            <Upload className="w-5 h-5 text-blue-700" />
-            Upload Document & Metadata Registration
-          </h1>
+        <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
+          <div>
+            <Breadcrumb items={[{ label: 'Document Library', href: '/library' }, { label: 'Upload Document' }]} />
+            <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
+              <Upload className="w-5 h-5 text-blue-700" />
+              Upload Document & Metadata Registration
+            </h1>
+          </div>
+          <Link href="/articles/create">
+            <Button variant="outline" size="sm" icon={<FileText className="w-4 h-4" />}>
+              Create Article Instead
+            </Button>
+          </Link>
         </div>
 
         {uploadSuccess ? (

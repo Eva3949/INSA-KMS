@@ -11,7 +11,7 @@ import { Modal } from '@/src/components/ui/Modal';
 import { Input, Select } from '@/src/components/ui/Input';
 import { LoadingState } from '@/src/components/ui/States';
 import { kmsApi } from '@/src/lib/api';
-import { FileLock2, Plus, Archive, Trash2, Pencil, PlayCircle, Eye } from 'lucide-react';
+import { FileLock2, Plus, Archive, Trash2, Pencil, PlayCircle, Eye, ShieldAlert, CheckCircle } from 'lucide-react';
 
 interface PolicyRow {
   id: string;
@@ -22,6 +22,18 @@ interface PolicyRow {
   dispositionAction: string;
   isActive: boolean;
   createdAt: string;
+}
+
+interface CandidateRow {
+  documentId: string;
+  title: string;
+  policyId: string;
+  policyName: string;
+  dispositionAction: string;
+  documentStatus: string;
+  isLegalHoldActive: boolean;
+  referenceDate: string;
+  retentionDays: number;
 }
 
 interface DocTypeOption {
@@ -38,6 +50,7 @@ function formatDuration(days?: number | null): string {
 export default function RetentionPoliciesPage() {
   const [policies, setPolicies] = React.useState<PolicyRow[]>([]);
   const [docTypes, setDocTypes] = React.useState<DocTypeOption[]>([]);
+  const [candidates, setCandidates] = React.useState<CandidateRow[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -56,10 +69,15 @@ export default function RetentionPoliciesPage() {
   const load = React.useCallback(() => {
     setIsLoading(true);
     setError(null);
-    Promise.all([kmsApi.governance.getRetentionPolicies(), kmsApi.admin.getDocumentTypes().catch(() => [])])
-      .then(([policyData, typeData]) => {
+    Promise.all([
+      kmsApi.governance.getRetentionPolicies(),
+      kmsApi.admin.getDocumentTypes().catch(() => []),
+      kmsApi.governance.getRetentionCandidates().catch(() => []),
+    ])
+      .then(([policyData, typeData, candidateData]) => {
         setPolicies(policyData as PolicyRow[]);
         setDocTypes((typeData as DocTypeOption[]) ?? []);
+        setCandidates((candidateData as CandidateRow[]) ?? []);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Failed to load retention policies'))
       .finally(() => setIsLoading(false));
@@ -98,21 +116,32 @@ export default function RetentionPoliciesPage() {
       setError('Policy name is required.');
       return;
     }
+    const days = parseInt(formRetentionDays, 10);
+    if (isNaN(days) || days < 1) {
+      setError('Retention duration must be a positive integer.');
+      return;
+    }
     setIsSaving(true);
     try {
-      const payload = {
-        name: formName.trim(),
-        description: formDescription.trim(),
-        documentTypeId: formDocTypeId || undefined,
-        retentionDays: Number(formRetentionDays),
-        dispositionAction: formDisposition,
-      };
       if (editing) {
-        await kmsApi.governance.updateRetentionPolicy(editing.id, { ...payload, isActive: formIsActive === 'true' });
-        setNotice(`Retention schedule "${payload.name}" updated.`);
+        await kmsApi.governance.updateRetentionPolicy(editing.id, {
+          name: formName.trim(),
+          description: formDescription.trim(),
+          documentTypeId: formDocTypeId || null,
+          retentionDays: days,
+          dispositionAction: formDisposition,
+          isActive: formIsActive === 'true',
+        });
+        setNotice(`Policy '${formName}' updated.`);
       } else {
-        await kmsApi.governance.createRetentionPolicy(payload as any);
-        setNotice(`Retention schedule "${payload.name}" created.`);
+        await kmsApi.governance.createRetentionPolicy({
+          name: formName.trim(),
+          description: formDescription.trim(),
+          documentTypeId: formDocTypeId || undefined,
+          retentionDays: days,
+          dispositionAction: formDisposition,
+        });
+        setNotice(`Policy '${formName}' created.`);
       }
       setIsModalOpen(false);
       setError(null);
@@ -125,10 +154,10 @@ export default function RetentionPoliciesPage() {
   };
 
   const handleDelete = async (policy: PolicyRow) => {
-    if (!window.confirm(`Delete retention schedule "${policy.name}"?`)) return;
+    if (!window.confirm(`Delete retention policy '${policy.name}'?`)) return;
     try {
       await kmsApi.governance.deleteRetentionPolicy(policy.id);
-      setNotice(`Retention schedule "${policy.name}" deleted.`);
+      setNotice(`Policy '${policy.name}' deleted.`);
       setError(null);
       load();
     } catch (err: unknown) {
@@ -140,10 +169,12 @@ export default function RetentionPoliciesPage() {
     setIsRunning(true);
     setNotice(null);
     try {
-      const result = await kmsApi.admin.runRetentionDispositions();
+      const summary = await kmsApi.admin.runRetentionDispositions();
       setNotice(
-        `Disposition run complete — archived: ${result.archived}, purged: ${result.purged}, review: ${result.reviewFlagged}, skipped under legal hold: ${result.skippedOnLegalHold}.`
+        `Disposition run finished: ${summary.archived} archived, ${summary.purged} purged, ${summary.reviewFlagged} flagged for review. ${summary.skippedOnLegalHold} skipped due to active Legal Hold.`
       );
+      setError(null);
+      load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Disposition run failed');
     } finally {
@@ -155,46 +186,31 @@ export default function RetentionPoliciesPage() {
     {
       header: 'Policy Name',
       accessor: (pol: PolicyRow) => (
-        <div className="font-semibold text-kms-slate-900 flex items-center gap-2 text-xs">
-          <FileLock2 className="w-4 h-4 text-blue-700 shrink-0" />
-          <span>
-            {pol.name}
-            {pol.description && <span className="block text-[11px] font-normal text-kms-slate-500">{pol.description}</span>}
-          </span>
+        <div>
+          <span className="font-semibold text-kms-slate-900 block">{pol.name}</span>
+          {pol.description && <span className="text-xs text-kms-slate-500">{pol.description}</span>}
         </div>
       ),
     },
     {
-      header: 'Target Document Type',
+      header: 'Scope (Doc Type)',
       accessor: (pol: PolicyRow) => (
-        <span className="text-xs text-kms-slate-700">{pol.documentType?.name ?? 'All types'}</span>
+        <span className="text-xs text-kms-slate-700">{pol.documentType?.name || 'All Document Types'}</span>
       ),
     },
     {
-      header: 'Retention Duration',
+      header: 'Retention Period',
       accessor: (pol: PolicyRow) => (
-        <span className="font-mono text-xs font-bold text-kms-slate-800 bg-kms-slate-100 px-2 py-0.5 rounded border border-kms-slate-300">
-          {formatDuration(pol.retentionDays)}
-        </span>
+        <span className="font-mono text-xs font-semibold text-blue-700">{formatDuration(pol.retentionDays)}</span>
       ),
     },
     {
-      header: 'Automated Disposition',
-      accessor: (pol: PolicyRow) => (
-        <Badge
-          label={pol.dispositionAction}
-          variant={pol.dispositionAction === 'ARCHIVE' ? 'blue' : pol.dispositionAction === 'REVIEW' ? 'amber' : 'red'}
-          icon={
-            pol.dispositionAction === 'ARCHIVE' ? (
-              <Archive className="w-3 h-3 text-blue-600" />
-            ) : pol.dispositionAction === 'REVIEW' ? (
-              <Eye className="w-3 h-3 text-amber-600" />
-            ) : (
-              <Trash2 className="w-3 h-3 text-red-600" />
-            )
-          }
-        />
-      ),
+      header: 'Disposition Action',
+      accessor: (pol: PolicyRow) => {
+        const action = (pol.dispositionAction || 'ARCHIVE').toUpperCase();
+        const variant = action === 'PURGE' ? 'red' : action === 'REVIEW' ? 'amber' : 'blue';
+        return <Badge label={action} variant={variant as any} />;
+      },
     },
     {
       header: 'Status',
@@ -217,15 +233,51 @@ export default function RetentionPoliciesPage() {
     },
   ];
 
+  const candidateColumns = [
+    {
+      header: 'Document Title',
+      accessor: (cand: CandidateRow) => (
+        <div>
+          <span className="font-semibold text-kms-slate-900 block">{cand.title}</span>
+          <span className="text-[11px] text-kms-slate-400 font-mono">ID: {cand.documentId}</span>
+        </div>
+      ),
+    },
+    {
+      header: 'Matching Policy',
+      accessor: (cand: CandidateRow) => (
+        <span className="text-xs text-kms-slate-700 font-medium">{cand.policyName}</span>
+      ),
+    },
+    {
+      header: 'Planned Action',
+      accessor: (cand: CandidateRow) => {
+        const action = (cand.dispositionAction || 'ARCHIVE').toUpperCase();
+        const variant = action === 'PURGE' ? 'red' : action === 'REVIEW' ? 'amber' : 'blue';
+        return <Badge label={action} variant={variant as any} />;
+      },
+    },
+    {
+      header: 'Legal Hold Status',
+      accessor: (cand: CandidateRow) => (
+        cand.isLegalHoldActive ? (
+          <Badge variant="red" label="FROZEN BY LEGAL HOLD" />
+        ) : (
+          <Badge variant="green" label="READY FOR DISPOSITION" />
+        )
+      ),
+    },
+  ];
+
   return (
     <AppShell requiredRole="ROLE_COMPLIANCE_OFFICER">
-      <div className="space-y-5">
+      <div className="space-y-6">
         <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
           <div>
             <Breadcrumb items={[{ label: 'Governance & Compliance' }, { label: 'Retention Policies' }]} />
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
               <FileLock2 className="w-5 h-5 text-blue-700" />
-              Retention Policies & Automated Disposition Rules
+              Retention Policies &amp; Automated Disposition Rules
             </h1>
           </div>
 
@@ -252,6 +304,24 @@ export default function RetentionPoliciesPage() {
         ) : (
           <Table columns={columns} data={policies} keyExtractor={(item) => item.id} emptyText="No retention policies defined." />
         )}
+
+        {/* Pending Disposition Queue */}
+        <div className="bg-white rounded-lg border border-kms-slate-200 shadow-sm p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-kms-slate-900 flex items-center gap-2">
+                <Archive className="w-5 h-5 text-blue-700" />
+                Pending Disposition Review Queue (FR-28 Candidate Docs)
+              </h2>
+              <p className="text-xs text-kms-slate-500">
+                Documents exceeding retention schedule thresholds eligible for disposition in the next daily cycle.
+              </p>
+            </div>
+            <Badge variant="blue" label={`${candidates.length} Candidate(s)`} />
+          </div>
+
+          <Table columns={candidateColumns} data={candidates} keyExtractor={(cand) => `${cand.documentId}-${cand.policyId}`} emptyText="No candidate documents currently due for disposition." />
+        </div>
 
         <Modal
           isOpen={isModalOpen}

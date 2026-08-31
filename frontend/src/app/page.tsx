@@ -181,10 +181,13 @@ export default function DashboardOverviewPage() {
         <div className="flex flex-wrap items-center justify-between border-b border-slate-200 pb-4 gap-3">
           <div>
             <Breadcrumb items={[{ label: 'Dashboard Overview' }]} />
-            <h1 className="text-xl font-black text-blue-900 tracking-tight">
-              INSA Knowledge Management System
+            <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <span>INSA Enterprise</span>
+              <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full border border-blue-200 uppercase tracking-wider">
+                Knowledge Hub
+              </span>
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 mt-1 font-medium">
               Official INSA document repository, security classification labels, and compliance governance.
             </p>
           </div>
@@ -196,11 +199,18 @@ export default function DashboardOverviewPage() {
               </Button>
             </Link>
             {(roles.includes('ROLE_ADMIN') || roles.includes('ROLE_CONTRIBUTOR')) && (
-              <Link href="/upload">
-                <Button variant="primary" size="sm" icon={<Plus className="w-4 h-4" />}>
-                  Upload Document
-                </Button>
-              </Link>
+              <>
+                <Link href="/upload">
+                  <Button variant="outline" size="sm" icon={<Plus className="w-4 h-4" />}>
+                    Upload Document
+                  </Button>
+                </Link>
+                <Link href="/articles/create">
+                  <Button variant="primary" size="sm" icon={<FileText className="w-4 h-4" />}>
+                    Create Article
+                  </Button>
+                </Link>
+              </>
             )}
           </div>
         </div>
