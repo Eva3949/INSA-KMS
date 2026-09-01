@@ -19,6 +19,9 @@ public class DocumentType {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = true;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
@@ -30,6 +33,9 @@ public class DocumentType {
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }

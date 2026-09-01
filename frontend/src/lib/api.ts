@@ -79,9 +79,27 @@ export const kmsApi = {
   getCurrentUser: () => fetchApi<{ id?: string; username: string; email: string; fullName: string; department?: string; roles: string[] }>('/users/me'),
   getMyApprovals: () => fetchApi<any[]>('/users/me/approvals'),
 
+  // Departments & Categories Active Lookup
+  departments: {
+    getActive: () => fetchApi<Array<{ id: string; name: string; code: string; isActive?: boolean }>>('/departments/active'),
+  },
+  documentTypes: {
+    getActive: () => fetchApi<Array<{ id: string; name: string; description?: string; isActive?: boolean }>>('/document-types/active'),
+  },
+
   // Documents
   documents: {
-    list: (page = 0, size = 10) => fetchApi<any>(`/documents?page=${page}&size=${size}`),
+    list: (
+      page = 0,
+      size = 10,
+      filters?: { departmentId?: string; docTypeId?: string; confidentiality?: string }
+    ) => {
+      const params = new URLSearchParams({ page: String(page), size: String(size) });
+      if (filters?.departmentId) params.set('departmentId', filters.departmentId);
+      if (filters?.docTypeId) params.set('docTypeId', filters.docTypeId);
+      if (filters?.confidentiality && filters.confidentiality !== 'ALL') params.set('confidentiality', filters.confidentiality);
+      return fetchApi<any>(`/documents?${params.toString()}`);
+    },
     mine: (page = 0, size = 20) => fetchApi<any>(`/documents/mine?page=${page}&size=${size}`),
     recent: (limit = 20) => fetchApi<any[]>(`/documents/recent?limit=${limit}`),
     recycleBin: () => fetchApi<any[]>(`/documents/recycle-bin?page=0&size=100`),
@@ -246,10 +264,29 @@ export const kmsApi = {
   // Search
   search: {
     quick: (query: string) => fetchApi<any>(`/search/quick?q=${encodeURIComponent(query)}`),
-    advanced: (query: string) => fetchApi<any>(`/search/advanced`, {
-      method: 'POST',
-      body: JSON.stringify({ query }),
-    }),
+    advanced: (
+      query: string,
+      filters?: {
+        docTypeId?: string;
+        deptId?: string;
+        confidentiality?: string;
+        authorId?: string;
+        dateFrom?: string;
+        dateTo?: string;
+      }
+    ) =>
+      fetchApi<any>(`/search/advanced`, {
+        method: 'POST',
+        body: JSON.stringify({
+          query,
+          docTypeId: filters?.docTypeId || undefined,
+          deptId: filters?.deptId || undefined,
+          confidentiality: filters?.confidentiality && filters.confidentiality !== 'ALL' ? filters.confidentiality : undefined,
+          authorId: filters?.authorId || undefined,
+          dateFrom: filters?.dateFrom || undefined,
+          dateTo: filters?.dateTo || undefined,
+        }),
+      }),
   },
 
   // Governance & Compliance
@@ -304,14 +341,25 @@ export const kmsApi = {
 
     // Departments & quotas (FR-27)
     getDepartments: () => fetchApi<any[]>('/admin/departments'),
+    searchDepartments: (q: string) => fetchApi<any[]>(`/admin/departments/search?q=${encodeURIComponent(q)}`),
     createDepartment: (payload: { name: string; code: string; storageQuotaBytes?: number }) =>
       fetchApi<any>('/admin/departments', { method: 'POST', body: JSON.stringify(payload) }),
-    updateDepartment: (id: string, payload: { name?: string; code?: string; storageQuotaBytes?: number }) =>
+    updateDepartment: (id: string, payload: { name?: string; code?: string; storageQuotaBytes?: number; isActive?: boolean }) =>
       fetchApi<any>(`/admin/departments/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    activateDepartment: (id: string) => fetchApi<any>(`/admin/departments/${id}/activate`, { method: 'PUT' }),
+    deactivateDepartment: (id: string) => fetchApi<any>(`/admin/departments/${id}/deactivate`, { method: 'PUT' }),
     deleteDepartment: (id: string) => fetchApi<void>(`/admin/departments/${id}`, { method: 'DELETE' }),
 
-    // Document types (FR-06)
+    // Document types & Categories (FR-06)
     getDocumentTypes: () => fetchApi<any[]>('/admin/document-types'),
+    searchDocumentTypes: (q: string) => fetchApi<any[]>(`/admin/document-types/search?q=${encodeURIComponent(q)}`),
+    createDocumentType: (payload: { name: string; description?: string }) =>
+      fetchApi<any>('/admin/document-types', { method: 'POST', body: JSON.stringify(payload) }),
+    updateDocumentType: (id: string, payload: { name?: string; description?: string; isActive?: boolean }) =>
+      fetchApi<any>(`/admin/document-types/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    activateDocumentType: (id: string) => fetchApi<any>(`/admin/document-types/${id}/activate`, { method: 'PUT' }),
+    deactivateDocumentType: (id: string) => fetchApi<any>(`/admin/document-types/${id}/deactivate`, { method: 'PUT' }),
+    deleteDocumentType: (id: string) => fetchApi<void>(`/admin/document-types/${id}`, { method: 'DELETE' }),
     listTypeFields: (typeId: string) => fetchApi<any[]>(`/admin/document-types/${typeId}/fields`),
     createTypeField: (typeId: string, payload: { fieldKey: string; label?: string; dataType?: string; required?: boolean }) =>
       fetchApi<any>(`/admin/document-types/${typeId}/fields`, { method: 'POST', body: JSON.stringify(payload) }),
@@ -325,12 +373,6 @@ export const kmsApi = {
     updateApprovalTemplate: (id: string, payload: Record<string, unknown>) =>
       fetchApi<any>(`/admin/approval-templates/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
     deleteApprovalTemplate: (id: string) => fetchApi<void>(`/admin/approval-templates/${id}`, { method: 'DELETE' }),
-
-    createDocumentType: (payload: { name: string; description?: string }) =>
-      fetchApi<any>('/admin/document-types', { method: 'POST', body: JSON.stringify(payload) }),
-    updateDocumentType: (id: string, payload: { name?: string; description?: string }) =>
-      fetchApi<any>(`/admin/document-types/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
-    deleteDocumentType: (id: string) => fetchApi<void>(`/admin/document-types/${id}`, { method: 'DELETE' }),
 
     // Taxonomy / tags (FR-03)
     getTags: () => fetchApi<any[]>('/admin/taxonomy/tags'),

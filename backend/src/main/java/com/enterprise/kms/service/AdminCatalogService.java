@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -60,10 +61,25 @@ public class AdminCatalogService {
         this.storageService = storageService;
     }
 
-    // ---------- Departments (FR-27 storage quotas) ----------
+    // ---------- Departments (FR-27 storage quotas & lifecycle) ----------
 
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getDepartmentsWithUsage() {
+        return mapDepartmentsWithUsage(departmentRepository.findAll());
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> searchDepartments(String query) {
+        if (query == null || query.isBlank()) {
+            return getDepartmentsWithUsage();
+        }
+        String trimmed = query.trim();
+        List<Department> matched = departmentRepository
+                .findByNameContainingIgnoreCaseOrCodeContainingIgnoreCase(trimmed, trimmed);
+        return mapDepartmentsWithUsage(matched);
+    }
+
+    private List<Map<String, Object>> mapDepartmentsWithUsage(List<Department> departments) {
         Map<UUID, Object[]> usageByDept = new HashMap<>();
         for (Object[] row : documentRepository.aggregateUsageByDepartment()) {
             UUID deptId = UUID.fromString(row[0].toString());
@@ -71,12 +87,14 @@ public class AdminCatalogService {
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Department dept : departmentRepository.findAll()) {
+        for (Department dept : departments) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", dept.getId());
             row.put("name", dept.getName());
             row.put("code", dept.getCode());
             row.put("storageQuotaBytes", dept.getStorageQuotaBytes());
+            row.put("isActive", dept.getIsActive() != null ? dept.getIsActive() : true);
+            row.put("createdAt", dept.getCreatedAt());
 
             Object[] usage = usageByDept.get(dept.getId());
             long usedBytes = usage != null ? ((Number) usage[1]).longValue() : 0L;
@@ -97,15 +115,24 @@ public class AdminCatalogService {
         if (name == null || name.isBlank() || code == null || code.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Department name and code are required");
         }
-        if (departmentRepository.findByName(name).isPresent()) {
+        String trimmedName = name.trim();
+        String trimmedCode = code.trim().toUpperCase();
+        if (trimmedName.length() > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Department name must not exceed 100 characters");
+        }
+        if (trimmedCode.length() > 20) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Department code must not exceed 20 characters");
+        }
+        if (departmentRepository.findByNameIgnoreCase(trimmedName).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A department with this name already exists");
         }
-        if (departmentRepository.findByCode(code).isPresent()) {
+        if (departmentRepository.findByCodeIgnoreCase(trimmedCode).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A department with this code already exists");
         }
         Department dept = new Department();
-        dept.setName(name.trim());
-        dept.setCode(code.trim().toUpperCase());
+        dept.setName(trimmedName);
+        dept.setCode(trimmedCode);
+        dept.setIsActive(true);
         if (storageQuotaBytes != null && storageQuotaBytes > 0) {
             dept.setStorageQuotaBytes(storageQuotaBytes);
         }
@@ -114,17 +141,57 @@ public class AdminCatalogService {
 
     @Transactional
     public Department updateDepartment(UUID id, String name, String code, Long storageQuotaBytes) {
+        return updateDepartment(id, name, code, storageQuotaBytes, null);
+    }
+
+    @Transactional
+    public Department updateDepartment(UUID id, String name, String code, Long storageQuotaBytes, Boolean isActive) {
         Department dept = departmentRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Department not found"));
         if (name != null && !name.isBlank()) {
-            dept.setName(name.trim());
+            String trimmedName = name.trim();
+            if (trimmedName.length() > 100) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Department name must not exceed 100 characters");
+            }
+            Optional<Department> existingName = departmentRepository.findByNameIgnoreCase(trimmedName);
+            if (existingName.isPresent() && !existingName.get().getId().equals(id)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "A department with this name already exists");
+            }
+            dept.setName(trimmedName);
         }
         if (code != null && !code.isBlank()) {
-            dept.setCode(code.trim().toUpperCase());
+            String trimmedCode = code.trim().toUpperCase();
+            if (trimmedCode.length() > 20) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Department code must not exceed 20 characters");
+            }
+            Optional<Department> existingCode = departmentRepository.findByCodeIgnoreCase(trimmedCode);
+            if (existingCode.isPresent() && !existingCode.get().getId().equals(id)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "A department with this code already exists");
+            }
+            dept.setCode(trimmedCode);
         }
         if (storageQuotaBytes != null && storageQuotaBytes > 0) {
             dept.setStorageQuotaBytes(storageQuotaBytes);
         }
+        if (isActive != null) {
+            dept.setIsActive(isActive);
+        }
+        return departmentRepository.save(dept);
+    }
+
+    @Transactional
+    public Department activateDepartment(UUID id) {
+        Department dept = departmentRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Department not found"));
+        dept.setIsActive(true);
+        return departmentRepository.save(dept);
+    }
+
+    @Transactional
+    public Department deactivateDepartment(UUID id) {
+        Department dept = departmentRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Department not found"));
+        dept.setIsActive(false);
         return departmentRepository.save(dept);
     }
 
@@ -141,16 +208,32 @@ public class AdminCatalogService {
         departmentRepository.delete(dept);
     }
 
-    // ---------- Document types (Section 9 metadata schema) ----------
+    // ---------- Document types & Categories (Section 9 metadata schema & lifecycle) ----------
 
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getDocumentTypesWithUsage() {
+        return mapDocumentTypesWithUsage(documentTypeRepository.findAll());
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> searchDocumentTypes(String query) {
+        if (query == null || query.isBlank()) {
+            return getDocumentTypesWithUsage();
+        }
+        String trimmed = query.trim();
+        List<DocumentType> matched = documentTypeRepository
+                .findByNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(trimmed, trimmed);
+        return mapDocumentTypesWithUsage(matched);
+    }
+
+    private List<Map<String, Object>> mapDocumentTypesWithUsage(List<DocumentType> types) {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (DocumentType type : documentTypeRepository.findAll()) {
+        for (DocumentType type : types) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", type.getId());
             row.put("name", type.getName());
             row.put("description", type.getDescription());
+            row.put("isActive", type.getIsActive() != null ? type.getIsActive() : true);
             row.put("documentCount", documentRepository.countByDocumentTypeId(type.getId()));
             row.put("createdAt", type.getCreatedAt());
             result.add(row);
@@ -163,25 +246,62 @@ public class AdminCatalogService {
         if (name == null || name.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Document type name is required");
         }
-        if (documentTypeRepository.findByName(name).isPresent()) {
+        String trimmedName = name.trim();
+        if (trimmedName.length() > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Document type name must not exceed 100 characters");
+        }
+        if (documentTypeRepository.findByNameIgnoreCase(trimmedName).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A document type with this name already exists");
         }
         DocumentType type = new DocumentType();
-        type.setName(name.trim());
-        type.setDescription(description);
+        type.setName(trimmedName);
+        type.setDescription(description != null ? description.trim() : null);
+        type.setIsActive(true);
         return documentTypeRepository.save(type);
     }
 
     @Transactional
     public DocumentType updateDocumentType(UUID id, String name, String description) {
+        return updateDocumentType(id, name, description, null);
+    }
+
+    @Transactional
+    public DocumentType updateDocumentType(UUID id, String name, String description, Boolean isActive) {
         DocumentType type = documentTypeRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document type not found"));
         if (name != null && !name.isBlank()) {
-            type.setName(name.trim());
+            String trimmedName = name.trim();
+            if (trimmedName.length() > 100) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Document type name must not exceed 100 characters");
+            }
+            Optional<DocumentType> existing = documentTypeRepository.findByNameIgnoreCase(trimmedName);
+            if (existing.isPresent() && !existing.get().getId().equals(id)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "A document type with this name already exists");
+            }
+            type.setName(trimmedName);
         }
         if (description != null) {
-            type.setDescription(description);
+            type.setDescription(description.trim());
         }
+        if (isActive != null) {
+            type.setIsActive(isActive);
+        }
+        return documentTypeRepository.save(type);
+    }
+
+    @Transactional
+    public DocumentType activateDocumentType(UUID id) {
+        DocumentType type = documentTypeRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document type not found"));
+        type.setIsActive(true);
+        return documentTypeRepository.save(type);
+    }
+
+    @Transactional
+    public DocumentType deactivateDocumentType(UUID id) {
+        DocumentType type = documentTypeRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document type not found"));
+        type.setIsActive(false);
         return documentTypeRepository.save(type);
     }
 

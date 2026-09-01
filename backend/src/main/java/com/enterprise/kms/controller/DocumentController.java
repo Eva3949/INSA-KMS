@@ -43,6 +43,7 @@ public class DocumentController {
     private final DocumentRepository documentRepository;
     private final com.enterprise.kms.service.StorageService storageService;
     private final com.enterprise.kms.repository.StorageObjectRepository storageObjectRepository;
+    private final com.enterprise.kms.service.SearchService searchService;
 
     public DocumentController(DocumentService documentService, PermissionService permissionService,
                               com.enterprise.kms.service.SystemSettingService systemSettingService,
@@ -55,7 +56,8 @@ public class DocumentController {
                               SubscriptionRepository subscriptionRepository,
                               DocumentRepository documentRepository,
                               com.enterprise.kms.service.StorageService storageService,
-                              com.enterprise.kms.repository.StorageObjectRepository storageObjectRepository) {
+                              com.enterprise.kms.repository.StorageObjectRepository storageObjectRepository,
+                              com.enterprise.kms.service.SearchService searchService) {
         this.documentService = documentService;
         this.permissionService = permissionService;
         this.systemSettingService = systemSettingService;
@@ -69,6 +71,7 @@ public class DocumentController {
         this.documentRepository = documentRepository;
         this.storageService = storageService;
         this.storageObjectRepository = storageObjectRepository;
+        this.searchService = searchService;
     }
 
     @GetMapping("/{id}/metadata")
@@ -89,7 +92,32 @@ public class DocumentController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_COMPLIANCE_OFFICER', 'ROLE_IT_SECURITY', 'ROLE_ADMIN')")
-    public ResponseEntity<Page<java.util.Map<String, Object>>> getAllDocuments(Pageable pageable) {
+    public ResponseEntity<Page<java.util.Map<String, Object>>> getAllDocuments(
+            @RequestParam(name = "departmentId", required = false) String departmentId,
+            @RequestParam(name = "deptId", required = false) String deptId,
+            @RequestParam(name = "docTypeId", required = false) String docTypeId,
+            @RequestParam(name = "documentTypeId", required = false) String documentTypeId,
+            @RequestParam(name = "confidentiality", required = false) String confidentiality,
+            @RequestParam(name = "classification", required = false) String classification,
+            Pageable pageable) {
+        String rawDept = (departmentId != null && !departmentId.isBlank()) ? departmentId : deptId;
+        String rawDocType = (docTypeId != null && !docTypeId.isBlank()) ? docTypeId : documentTypeId;
+        String rawConf = (confidentiality != null && !confidentiality.isBlank()) ? confidentiality : classification;
+
+        String effectiveDeptId = (rawDept != null && !rawDept.isBlank() && !"ALL".equalsIgnoreCase(rawDept.trim())) ? rawDept.trim() : null;
+        String effectiveDocTypeId = (rawDocType != null && !rawDocType.isBlank() && !"ALL".equalsIgnoreCase(rawDocType.trim())) ? rawDocType.trim() : null;
+        String effectiveConf = (rawConf != null && !rawConf.isBlank() && !"ALL".equalsIgnoreCase(rawConf.trim())) ? rawConf.trim() : null;
+
+        boolean hasFilter = effectiveDeptId != null || effectiveDocTypeId != null || effectiveConf != null;
+        if (hasFilter) {
+            return ResponseEntity.ok(searchService.searchDocuments(
+                    null,
+                    effectiveDocTypeId,
+                    effectiveDeptId,
+                    effectiveConf,
+                    null, null, null, pageable
+            ).map(documentService::toResponse));
+        }
         return ResponseEntity.ok(documentService.getAllActiveDocumentResponses(pageable));
     }
 

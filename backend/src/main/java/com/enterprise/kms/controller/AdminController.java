@@ -342,65 +342,171 @@ public class AdminController {
         return ResponseEntity.ok(adminCatalogService.getDepartmentsWithUsage());
     }
 
-    @PostMapping("/departments")
+    @GetMapping("/departments/search")
     @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @AuditLog(action = "DEPARTMENT_SEARCH", resourceType = "SYSTEM")
+    public ResponseEntity<List<Map<String, Object>>> searchDepartments(@RequestParam(name = "q", defaultValue = "") String q) {
+        return ResponseEntity.ok(adminCatalogService.searchDepartments(q));
+    }
+
+    @PostMapping("/departments")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
     @AuditLog(action = "DEPARTMENT_CREATED", resourceType = "SYSTEM")
-    public ResponseEntity<Department> createDepartment(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Map<String, Object>> createDepartment(@RequestBody Map<String, Object> body) {
         String name = (String) body.get("name");
         String code = (String) body.get("code");
         Long quotaBytes = body.get("storageQuotaBytes") != null
                 ? Long.valueOf(body.get("storageQuotaBytes").toString()) : null;
         Department saved = adminCatalogService.createDepartment(name, code, quotaBytes);
-        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", saved.getId());
+        m.put("name", saved.getName());
+        m.put("code", saved.getCode());
+        m.put("storageQuotaBytes", saved.getStorageQuotaBytes());
+        m.put("isActive", saved.getIsActive());
+        m.put("createdAt", saved.getCreatedAt());
+        return ResponseEntity.status(HttpStatus.CREATED).body(m);
     }
 
     @PutMapping("/departments/{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
     @AuditLog(action = "DEPARTMENT_UPDATED", resourceType = "SYSTEM")
-    public ResponseEntity<Department> updateDepartment(@PathVariable("id") UUID id,
+    public ResponseEntity<Map<String, Object>> updateDepartment(@PathVariable("id") UUID id,
                                                        @RequestBody Map<String, Object> body) {
         String name = (String) body.get("name");
         String code = (String) body.get("code");
         Long quotaBytes = body.get("storageQuotaBytes") != null
                 ? Long.valueOf(body.get("storageQuotaBytes").toString()) : null;
-        return ResponseEntity.ok(adminCatalogService.updateDepartment(id, name, code, quotaBytes));
+        Boolean isActive = body.get("isActive") != null
+                ? Boolean.valueOf(body.get("isActive").toString()) : null;
+        Department saved = adminCatalogService.updateDepartment(id, name, code, quotaBytes, isActive);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", saved.getId());
+        m.put("name", saved.getName());
+        m.put("code", saved.getCode());
+        m.put("storageQuotaBytes", saved.getStorageQuotaBytes());
+        m.put("isActive", saved.getIsActive());
+        m.put("createdAt", saved.getCreatedAt());
+        return ResponseEntity.ok(m);
+    }
+
+    @PutMapping("/departments/{id}/activate")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
+    @AuditLog(action = "DEPARTMENT_ACTIVATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> activateDepartment(@PathVariable("id") UUID id) {
+        Department saved = adminCatalogService.activateDepartment(id);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", saved.getId());
+        m.put("name", saved.getName());
+        m.put("code", saved.getCode());
+        m.put("storageQuotaBytes", saved.getStorageQuotaBytes());
+        m.put("isActive", saved.getIsActive());
+        m.put("createdAt", saved.getCreatedAt());
+        return ResponseEntity.ok(m);
+    }
+
+    @PutMapping("/departments/{id}/deactivate")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
+    @AuditLog(action = "DEPARTMENT_DEACTIVATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> deactivateDepartment(@PathVariable("id") UUID id) {
+        Department saved = adminCatalogService.deactivateDepartment(id);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", saved.getId());
+        m.put("name", saved.getName());
+        m.put("code", saved.getCode());
+        m.put("storageQuotaBytes", saved.getStorageQuotaBytes());
+        m.put("isActive", saved.getIsActive());
+        m.put("createdAt", saved.getCreatedAt());
+        return ResponseEntity.ok(m);
     }
 
     @DeleteMapping("/departments/{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
     @AuditLog(action = "DEPARTMENT_DELETED", resourceType = "SYSTEM")
     public ResponseEntity<Map<String, String>> deleteDepartment(@PathVariable("id") UUID id) {
         adminCatalogService.deleteDepartment(id);
         return ResponseEntity.ok(Map.of("message", "Department deleted successfully", "id", id.toString()));
     }
 
-    // ================= Document Types (FR-06 / Section 9) =================
+    // ================= Document Types & Categories (FR-06 / Section 9) =================
 
     @GetMapping("/document-types")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_COMPLIANCE_OFFICER')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR', 'ROLE_COMPLIANCE_OFFICER')")
     @AuditLog(action = "DOCUMENT_TYPE_LIST_VIEW", resourceType = "SYSTEM")
     public ResponseEntity<List<Map<String, Object>>> getDocumentTypes() {
         return ResponseEntity.ok(adminCatalogService.getDocumentTypesWithUsage());
     }
 
+    @GetMapping("/document-types/search")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR', 'ROLE_COMPLIANCE_OFFICER')")
+    @AuditLog(action = "DOCUMENT_TYPE_SEARCH", resourceType = "SYSTEM")
+    public ResponseEntity<List<Map<String, Object>>> searchDocumentTypes(@RequestParam(name = "q", defaultValue = "") String q) {
+        return ResponseEntity.ok(adminCatalogService.searchDocumentTypes(q));
+    }
+
     @PostMapping("/document-types")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
     @AuditLog(action = "DOCUMENT_TYPE_CREATED", resourceType = "SYSTEM")
-    public ResponseEntity<DocumentType> createDocumentType(@RequestBody Map<String, String> body) {
+    public ResponseEntity<Map<String, Object>> createDocumentType(@RequestBody Map<String, String> body) {
         DocumentType saved = adminCatalogService.createDocumentType(body.get("name"), body.get("description"));
-        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", saved.getId());
+        m.put("name", saved.getName());
+        m.put("description", saved.getDescription());
+        m.put("isActive", saved.getIsActive());
+        m.put("createdAt", saved.getCreatedAt());
+        return ResponseEntity.status(HttpStatus.CREATED).body(m);
     }
 
     @PutMapping("/document-types/{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
     @AuditLog(action = "DOCUMENT_TYPE_UPDATED", resourceType = "SYSTEM")
-    public ResponseEntity<DocumentType> updateDocumentType(@PathVariable("id") UUID id,
-                                                           @RequestBody Map<String, String> body) {
-        return ResponseEntity.ok(adminCatalogService.updateDocumentType(id, body.get("name"), body.get("description")));
+    public ResponseEntity<Map<String, Object>> updateDocumentType(@PathVariable("id") UUID id,
+                                                           @RequestBody Map<String, Object> body) {
+        String name = (String) body.get("name");
+        String description = (String) body.get("description");
+        Boolean isActive = body.get("isActive") != null
+                ? Boolean.valueOf(body.get("isActive").toString()) : null;
+        DocumentType saved = adminCatalogService.updateDocumentType(id, name, description, isActive);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", saved.getId());
+        m.put("name", saved.getName());
+        m.put("description", saved.getDescription());
+        m.put("isActive", saved.getIsActive());
+        m.put("createdAt", saved.getCreatedAt());
+        return ResponseEntity.ok(m);
+    }
+
+    @PutMapping("/document-types/{id}/activate")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
+    @AuditLog(action = "DOCUMENT_TYPE_ACTIVATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> activateDocumentType(@PathVariable("id") UUID id) {
+        DocumentType saved = adminCatalogService.activateDocumentType(id);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", saved.getId());
+        m.put("name", saved.getName());
+        m.put("description", saved.getDescription());
+        m.put("isActive", saved.getIsActive());
+        m.put("createdAt", saved.getCreatedAt());
+        return ResponseEntity.ok(m);
+    }
+
+    @PutMapping("/document-types/{id}/deactivate")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
+    @AuditLog(action = "DOCUMENT_TYPE_DEACTIVATED", resourceType = "SYSTEM")
+    public ResponseEntity<Map<String, Object>> deactivateDocumentType(@PathVariable("id") UUID id) {
+        DocumentType saved = adminCatalogService.deactivateDocumentType(id);
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", saved.getId());
+        m.put("name", saved.getName());
+        m.put("description", saved.getDescription());
+        m.put("isActive", saved.getIsActive());
+        m.put("createdAt", saved.getCreatedAt());
+        return ResponseEntity.ok(m);
     }
 
     @DeleteMapping("/document-types/{id}")
-    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_SYSTEM_ADMINISTRATOR')")
     @AuditLog(action = "DOCUMENT_TYPE_DELETED", resourceType = "SYSTEM")
     public ResponseEntity<Map<String, String>> deleteDocumentType(@PathVariable("id") UUID id) {
         adminCatalogService.deleteDocumentType(id);

@@ -22,6 +22,9 @@ public class Department {
     @Column(name = "storage_quota_bytes", nullable = false)
     private Long storageQuotaBytes = 107374182400L;
 
+    @Column(name = "is_active", nullable = false)
+    private Boolean isActive = true;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
@@ -36,6 +39,9 @@ public class Department {
 
     public Long getStorageQuotaBytes() { return storageQuotaBytes; }
     public void setStorageQuotaBytes(Long storageQuotaBytes) { this.storageQuotaBytes = storageQuotaBytes; }
+
+    public Boolean getIsActive() { return isActive; }
+    public void setIsActive(Boolean isActive) { this.isActive = isActive; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }

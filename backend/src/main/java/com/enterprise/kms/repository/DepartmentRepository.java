@@ -11,4 +11,10 @@ import java.util.UUID;
 public interface DepartmentRepository extends JpaRepository<Department, UUID> {
     Optional<Department> findByCode(String code);
     Optional<Department> findByName(String name);
+    Optional<Department> findByNameIgnoreCase(String name);
+    Optional<Department> findByCodeIgnoreCase(String code);
+    @org.springframework.data.jpa.repository.Query("SELECT d FROM Department d WHERE d.isActive = true OR d.isActive IS NULL ORDER BY d.name ASC")
+    java.util.List<Department> findByIsActiveTrue();
+
+    java.util.List<Department> findByNameContainingIgnoreCaseOrCodeContainingIgnoreCase(String name, String code);
 }

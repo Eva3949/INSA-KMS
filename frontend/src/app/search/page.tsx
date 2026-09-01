@@ -30,21 +30,46 @@ interface SearchResult {
 export default function AdvancedSearchPage() {
   const [query, setQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
+  const [selectedDept, setSelectedDept] = useState('ALL');
+  const [selectedDocType, setSelectedDocType] = useState('ALL');
   const [sortBy, setSortBy] = useState('relevance');
+
+  const [departmentsList, setDepartmentsList] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [docTypesList, setDocTypesList] = useState<Array<{ id: string; name: string }>>([]);
 
   const [results, setResults] = useState<SearchResult[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    kmsApi.departments.getActive()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data as any)?.content || [];
+        setDepartmentsList(list);
+      })
+      .catch(() => {});
+    kmsApi.documentTypes.getActive()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data as any)?.content || [];
+        setDocTypesList(list);
+      })
+      .catch(() => {});
+  }, []);
+
   const executeSearch = async () => {
-    if (!query.trim()) return;
+    if (!query.trim() && selectedDept === 'ALL' && selectedDocType === 'ALL' && selectedClass === 'ALL') return;
     setIsLoading(true);
     setError(null);
     setHasSearched(true);
 
     try {
-      const data = await kmsApi.search.advanced(query.trim());
+      const filters = {
+        deptId: selectedDept !== 'ALL' ? selectedDept : undefined,
+        docTypeId: selectedDocType !== 'ALL' ? selectedDocType : undefined,
+        confidentiality: selectedClass !== 'ALL' ? selectedClass : undefined,
+      };
+      const data = await kmsApi.search.advanced(query.trim(), filters);
       const items = Array.isArray(data) ? data : (data as { content?: SearchResult[] }).content ?? [];
       setResults(items as SearchResult[]);
     } catch (err: unknown) {
@@ -62,15 +87,36 @@ export default function AdvancedSearchPage() {
 
   const clearSearch = () => {
     setQuery('');
+    setSelectedClass('ALL');
+    setSelectedDept('ALL');
+    setSelectedDocType('ALL');
     setResults([]);
     setHasSearched(false);
     setError(null);
   };
 
-  const filteredResults = results.filter((r) => {
-    if (selectedClass !== 'ALL' && r.securityClassification !== selectedClass) return false;
-    return true;
-  });
+  const filteredResults = [...results]
+    .filter((r) => {
+      if (selectedClass !== 'ALL' && r.securityClassification !== selectedClass && r.confidentialityLevel !== selectedClass) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'recency') {
+        const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+        const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+        return dateB - dateA;
+      }
+      if (sortBy === 'title') {
+        return (a.title || a.fileName || '').localeCompare(b.title || b.fileName || '');
+      }
+      return 0;
+    });
+
+  React.useEffect(() => {
+    if (hasSearched) {
+      executeSearch();
+    }
+  }, [selectedDept, selectedDocType, selectedClass]);
 
   return (
     <AppShell>
@@ -115,7 +161,7 @@ export default function AdvancedSearchPage() {
                 size="sm"
                 icon={<Search className="w-4 h-4" />}
                 onClick={executeSearch}
-                disabled={!query.trim() || isLoading}
+                disabled={isLoading}
               >
                 Execute Search
               </Button>
@@ -180,8 +226,26 @@ export default function AdvancedSearchPage() {
               )}
             </div>
 
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+            {/* Facets & Filter Controls */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2">
+              <Select
+                label="Department"
+                options={[
+                  { label: 'All Departments', value: 'ALL' },
+                  ...departmentsList.map((d) => ({ label: `${d.name} (${d.code})`, value: d.id })),
+                ]}
+                value={selectedDept}
+                onChange={(e) => setSelectedDept(e.target.value)}
+              />
+              <Select
+                label="Document Category / Type"
+                options={[
+                  { label: 'All Categories / Types', value: 'ALL' },
+                  ...docTypesList.map((t) => ({ label: t.name, value: t.id })),
+                ]}
+                value={selectedDocType}
+                onChange={(e) => setSelectedDocType(e.target.value)}
+              />
               <Select
                 label="Confidentiality Facet"
                 options={[

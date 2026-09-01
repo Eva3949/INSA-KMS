@@ -117,13 +117,42 @@ export default function DocumentLibraryPage() {
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [filterClass, setFilterClass] = useState('ALL');
+  const [selectedDept, setSelectedDept] = useState('ALL');
+  const [selectedDocType, setSelectedDocType] = useState('ALL');
+  const [departmentsList, setDepartmentsList] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [docTypesList, setDocTypesList] = useState<Array<{ id: string; name: string }>>([]);
   const [libraryMessage, setLibraryMessage] = useState<string | null>(null);
   const [folderCreating, setFolderCreating] = useState(false);
 
-  const loadDocuments = useCallback((page: number) => {
+  useEffect(() => {
+    kmsApi.departments.getActive()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data as any)?.content || [];
+        setDepartmentsList(list);
+      })
+      .catch(() => {});
+    kmsApi.documentTypes.getActive()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data as any)?.content || [];
+        setDocTypesList(list);
+      })
+      .catch(() => {});
+  }, []);
+
+  const loadDocuments = useCallback((
+    page: number = currentPage,
+    deptId: string = selectedDept,
+    typeId: string = selectedDocType,
+    conf: string = filterClass
+  ) => {
     setIsLoading(true);
     setError(null);
-    kmsApi.documents.list(page, PAGE_SIZE)
+    const filters = {
+      departmentId: deptId !== 'ALL' ? deptId : undefined,
+      docTypeId: typeId !== 'ALL' ? typeId : undefined,
+      confidentiality: conf !== 'ALL' ? conf : undefined,
+    };
+    kmsApi.documents.list(page, PAGE_SIZE, filters)
       .then((data) => {
         let docs: ApiDocument[];
         if (Array.isArray(data)) {
@@ -144,11 +173,11 @@ export default function DocumentLibraryPage() {
         setError(msg.includes('403') ? 'You do not have permission to view the document library.' : msg);
       })
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [currentPage, selectedDept, selectedDocType, filterClass]);
 
   useEffect(() => {
-    loadDocuments(currentPage);
-  }, [loadDocuments, currentPage]);
+    loadDocuments(currentPage, selectedDept, selectedDocType, filterClass);
+  }, [loadDocuments, currentPage, selectedDept, selectedDocType, filterClass]);
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -158,7 +187,7 @@ export default function DocumentLibraryPage() {
       setIsFolderModalOpen(false);
       setNewFolderName('');
       setLibraryMessage('Folder created successfully.');
-      loadDocuments(currentPage);
+      loadDocuments(currentPage, selectedDept, selectedDocType, filterClass);
     } catch (err: unknown) {
       setLibraryMessage(err instanceof Error ? err.message : 'Failed to create folder');
     } finally {
@@ -166,10 +195,14 @@ export default function DocumentLibraryPage() {
     }
   };
 
-  const filteredDocs = documents.filter((doc) => {
-    if (filterClass === 'ALL') return true;
-    return getDocClassification(doc) === filterClass;
-  });
+  const handleResetFilters = () => {
+    setSelectedDept('ALL');
+    setSelectedDocType('ALL');
+    setFilterClass('ALL');
+    setCurrentPage(0);
+  };
+
+  const filteredDocs = documents;
 
   const columns = [
     {
@@ -290,11 +323,41 @@ export default function DocumentLibraryPage() {
 
         {/* Filter & View Mode Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 border border-kms-slate-200 rounded-lg shadow-xs">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5 text-xs text-kms-slate-600 font-semibold">
               <Filter className="w-3.5 h-3.5 text-kms-slate-400" />
-              <span>Filter:</span>
+              <span>Filters:</span>
             </div>
+
+            {/* Department Filter */}
+            <Select
+              options={[
+                { label: 'All Departments', value: 'ALL' },
+                ...departmentsList.map((d) => ({ label: `${d.name} (${d.code})`, value: d.id })),
+              ]}
+              value={selectedDept}
+              onChange={(e) => {
+                setSelectedDept(e.target.value);
+                setCurrentPage(0);
+              }}
+              className="w-48"
+            />
+
+            {/* Document Category Filter */}
+            <Select
+              options={[
+                { label: 'All Categories / Types', value: 'ALL' },
+                ...docTypesList.map((t) => ({ label: t.name, value: t.id })),
+              ]}
+              value={selectedDocType}
+              onChange={(e) => {
+                setSelectedDocType(e.target.value);
+                setCurrentPage(0);
+              }}
+              className="w-48"
+            />
+
+            {/* Classification Filter */}
             <Select
               options={[
                 { label: 'All Classifications', value: 'ALL' },
@@ -304,9 +367,21 @@ export default function DocumentLibraryPage() {
                 { label: 'RESTRICTED', value: 'RESTRICTED' },
               ]}
               value={filterClass}
-              onChange={(e) => setFilterClass(e.target.value)}
+              onChange={(e) => {
+                setFilterClass(e.target.value);
+                setCurrentPage(0);
+              }}
               className="w-44"
             />
+
+            {(selectedDept !== 'ALL' || selectedDocType !== 'ALL' || filterClass !== 'ALL') && (
+              <button
+                onClick={handleResetFilters}
+                className="text-xs text-blue-700 hover:text-blue-900 font-medium underline px-1"
+              >
+                Clear Filters
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-4">

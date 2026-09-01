@@ -175,32 +175,32 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     /** FR-12 filtered full-text search: results can be narrowed by type, department, confidentiality, author, date range, tags. */
     @Query(value = "SELECT d.* FROM documents d " +
-                   "JOIN document_versions dv ON d.current_version_id = dv.id " +
+                   "LEFT JOIN document_versions dv ON d.current_version_id = dv.id " +
                    "LEFT JOIN document_types dt ON d.document_type_id = dt.id " +
                    "LEFT JOIN users u ON d.author_user_id = u.id " +
                    "LEFT JOIN departments dep ON d.owner_department_id = dep.id " +
                    "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' " +
-                   "AND (:query IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)) " +
-                   "AND (:docTypeId IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
-                   "AND (:deptId IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
-                   "AND (:confidentiality IS NULL OR d.confidentiality_level = :confidentiality) " +
-                   "AND (:authorId IS NULL OR d.author_user_id = CAST(:authorId AS uuid)) " +
-                   "AND (:dateFrom IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
-                   "AND (:dateTo IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
+                   "AND (CAST(:query AS varchar) IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || coalesce(dv.file_name, '') || ' ' || coalesce(d.title, '')) @@ plainto_tsquery('english', CAST(:query AS varchar))) " +
+                   "AND (CAST(:docTypeId AS varchar) IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
+                   "AND (CAST(:deptId AS varchar) IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
+                   "AND (CAST(:confidentiality AS varchar) IS NULL OR d.confidentiality_level = CAST(:confidentiality AS varchar)) " +
+                   "AND (CAST(:authorId AS varchar) IS NULL OR d.author_user_id = CAST(:authorId AS uuid)) " +
+                   "AND (CAST(:dateFrom AS varchar) IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
+                   "AND (CAST(:dateTo AS varchar) IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
                    "AND " + ACL_PREDICATE,
            countQuery = "SELECT count(d.id) FROM documents d " +
-                   "JOIN document_versions dv ON d.current_version_id = dv.id " +
+                   "LEFT JOIN document_versions dv ON d.current_version_id = dv.id " +
                    "LEFT JOIN document_types dt ON d.document_type_id = dt.id " +
                    "LEFT JOIN users u ON d.author_user_id = u.id " +
                    "LEFT JOIN departments dep ON d.owner_department_id = dep.id " +
                    "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' " +
-                   "AND (:query IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)) " +
-                   "AND (:docTypeId IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
-                   "AND (:deptId IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
-                   "AND (:confidentiality IS NULL OR d.confidentiality_level = :confidentiality) " +
-                   "AND (:authorId IS NULL OR d.author_user_id = CAST(:authorId AS uuid)) " +
-                   "AND (:dateFrom IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
-                   "AND (:dateTo IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
+                   "AND (CAST(:query AS varchar) IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || coalesce(dv.file_name, '') || ' ' || coalesce(d.title, '')) @@ plainto_tsquery('english', CAST(:query AS varchar))) " +
+                   "AND (CAST(:docTypeId AS varchar) IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
+                   "AND (CAST(:deptId AS varchar) IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
+                   "AND (CAST(:confidentiality AS varchar) IS NULL OR d.confidentiality_level = CAST(:confidentiality AS varchar)) " +
+                   "AND (CAST(:authorId AS varchar) IS NULL OR d.author_user_id = CAST(:authorId AS uuid)) " +
+                   "AND (CAST(:dateFrom AS varchar) IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
+                   "AND (CAST(:dateTo AS varchar) IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
                    "AND " + ACL_PREDICATE,
            nativeQuery = true)
     Page<Document> filteredSearch(@Param("query") String query,

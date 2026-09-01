@@ -30,8 +30,14 @@ export default function UploadDocumentPage() {
   const [departments, setDepartments] = useState<Array<{ id: string; name: string; code: string }>>([]);
 
   useEffect(() => {
-    kmsApi.admin.getDepartments()
-      .then((data) => setDepartments(Array.isArray(data) ? data : []))
+    kmsApi.departments.getActive()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data as any)?.content || [];
+        setDepartments(list);
+        if (list.length > 0 && !department) {
+          setDepartment(list[0].name);
+        }
+      })
       .catch(() => {
         setDepartments([
           { id: '1', name: 'Engineering', code: 'ENG' },
@@ -45,11 +51,12 @@ export default function UploadDocumentPage() {
   }, []);
 
   useEffect(() => {
-    kmsApi.admin.getDocumentTypes().then((types) => {
-      setDocumentTypes(types);
-      if (types.length > 0) {
-        setSelectedTypeId(types[0].id);
-        setDocumentType(types[0].name);
+    kmsApi.documentTypes.getActive().then((types) => {
+      const list = Array.isArray(types) ? types : (types as any)?.content || [];
+      setDocumentTypes(list);
+      if (list.length > 0) {
+        setSelectedTypeId(list[0].id);
+        setDocumentType(list[0].name);
       }
     }).catch(() => {});
   }, []);

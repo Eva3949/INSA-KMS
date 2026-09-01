@@ -72,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
     { href: '/admin/roles', label: 'Roles & Matrix', icon: ShieldCheck, role: 'ROLE_ADMIN' },
 { href: '/admin/permissions', label: 'Access Control', icon: KeyRound, role: 'ROLE_ADMIN' },
     { href: '/admin/departments', label: 'Departments & Quotas', icon: BarChart2, role: 'ROLE_ADMIN' },
-    { href: '/admin/document-types', label: 'Document Types', icon: FileCheck2, role: 'ROLE_ADMIN' },
+    { href: '/admin/document-types', label: 'Document Categories & Types', icon: FileCheck2, role: 'ROLE_ADMIN' },
     { href: '/admin/taxonomy', label: 'Taxonomy & Tags', icon: Tag, role: 'ROLE_ADMIN' },
     { href: '/admin/storage', label: 'Storage & Integrity', icon: HardDrive, role: 'ROLE_ADMIN' },
     { href: '/admin/ocr', label: 'OCR Queue', icon: ScanLine, role: 'ROLE_ADMIN' },

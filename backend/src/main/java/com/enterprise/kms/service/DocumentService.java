@@ -290,6 +290,7 @@ public class DocumentService {
         row.put("id", doc.getId());
         row.put("title", doc.getTitle());
         row.put("confidentialityLevel", doc.getConfidentialityLevel());
+        row.put("securityClassification", doc.getConfidentialityLevel());
         row.put("status", doc.getStatus());
         row.put("isDeleted", doc.getIsDeleted());
         row.put("createdAt", doc.getCreatedAt());
