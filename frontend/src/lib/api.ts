@@ -1,6 +1,38 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
+const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
+const REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'kms-realm';
+const CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'kms-frontend-client';
 
-async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+async function trySilentRefresh(): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  const refreshToken = sessionStorage.getItem('kms_refresh_token');
+  if (!refreshToken) return null;
+  try {
+    const res = await fetch(`${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: CLIENT_ID,
+        refresh_token: refreshToken,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.access_token) {
+      sessionStorage.setItem('kms_access_token', data.access_token);
+      if (data.refresh_token) {
+        sessionStorage.setItem('kms_refresh_token', data.refresh_token);
+      }
+      return data.access_token;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function fetchApi<T>(endpoint: string, options: RequestInit = {}, isRetry = false): Promise<T> {
   const defaultHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -21,15 +53,18 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
     },
   });
 
-  if (!response.ok) {
-    // On 401, clear auth state so AuthProvider picks it up on the next cycle.
-    // Do NOT hard-redirect here — AuthProvider handles the redirect cleanly
-    // and avoids competing redirects that cause login loops.
-    if (response.status === 401 && typeof window !== 'undefined') {
-      sessionStorage.removeItem('kms_access_token');
-      sessionStorage.removeItem('kms_refresh_token');
-      document.cookie = 'kms_auth_present=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+  if (response.status === 401 && !isRetry && typeof window !== 'undefined') {
+    const refreshedToken = await trySilentRefresh();
+    if (refreshedToken) {
+      return fetchApi<T>(endpoint, options, true);
     }
+    // Refresh failed or no refresh token
+    sessionStorage.removeItem('kms_access_token');
+    sessionStorage.removeItem('kms_refresh_token');
+    document.cookie = 'kms_auth_present=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+  }
+
+  if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`API Error [${response.status}]: ${errorText || response.statusText}`);
   }
@@ -453,5 +488,69 @@ export const kmsApi = {
         method: 'POST',
         body: JSON.stringify({ decision, comments }),
       }),
+  },
+
+  // Knowledge Transfer
+  knowledgeTransfer: {
+    listCases: (params?: { employeeId?: string; managerId?: string; successorId?: string; departmentId?: string; status?: string; search?: string; page?: number; size?: number; sort?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.employeeId) q.set('employeeId', params.employeeId);
+      if (params?.managerId) q.set('managerId', params.managerId);
+      if (params?.successorId) q.set('successorId', params.successorId);
+      if (params?.departmentId) q.set('departmentId', params.departmentId);
+      if (params?.status && params.status !== 'ALL') q.set('status', params.status);
+      if (params?.search) q.set('search', params.search);
+      if (params?.page !== undefined) q.set('page', String(params.page));
+      if (params?.size !== undefined) q.set('size', String(params.size));
+      if (params?.sort) q.set('sort', params.sort);
+      return fetchApi<any>(`/knowledge-transfer/cases?${q.toString()}`);
+    },
+    createCase: (payload: { title: string; employeeId: string; reasonType: string; priority?: string; notes?: string; startDate?: string; expectedCompletionDate?: string; managerId?: string; hrRepId?: string; successorId?: string; departmentId?: string }) =>
+      fetchApi<any>('/knowledge-transfer/cases', { method: 'POST', body: JSON.stringify(payload) }),
+    getCase: (id: string) => fetchApi<any>(`/knowledge-transfer/cases/${id}`),
+    updateCase: (id: string, payload: Record<string, any>) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    assignSuccessor: (caseId: string, successorId: string) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/successor`, { method: 'POST', body: JSON.stringify({ successorId }) }),
+    getPlan: (caseId: string) => fetchApi<any>(`/knowledge-transfer/cases/${caseId}/plan`),
+    savePlan: (caseId: string, payload: Record<string, any>) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/plan`, { method: 'PUT', body: JSON.stringify(payload) }),
+    getChecklist: (caseId: string) => fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/checklist`),
+    addChecklistItem: (caseId: string, payload: { itemName: string; category?: string; status?: string; notes?: string; assignedToId?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/checklist`, { method: 'POST', body: JSON.stringify(payload) }),
+    updateChecklistItem: (itemId: string, payload: { itemName?: string; status?: string; notes?: string; category?: string; assignedToId?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/checklist/${itemId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    listSubmissions: (caseId: string) => fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/submissions`),
+    submitKnowledge: (caseId: string, payload: { title: string; content: string; category?: string; documentId?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/submissions`, { method: 'POST', body: JSON.stringify(payload) }),
+    validateKnowledge: (submissionId: string, payload: { status: string; reviewComments?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/submissions/${submissionId}/validate`, { method: 'PUT', body: JSON.stringify(payload) }),
+    listSessions: (caseId: string) => fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/sessions`),
+    scheduleSession: (caseId: string, payload: { title: string; scheduledAt: string; locationOrLink?: string; meetingNotes?: string; attendeeIds?: string[]; recordingDocumentId?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/sessions`, { method: 'POST', body: JSON.stringify(payload) }),
+    updateSession: (sessionId: string, payload: Record<string, any>) =>
+      fetchApi<any>(`/knowledge-transfer/sessions/${sessionId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    getClearance: (caseId: string) => fetchApi<any>(`/knowledge-transfer/cases/${caseId}/clearance`),
+    completeTransfer: (caseId: string, payload?: { notes?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/complete`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+  },
+
+  // HR / Employee Management
+  hr: {
+    listEmployees: (params?: { query?: string; departmentId?: string; status?: string; managerId?: string; page?: number; size?: number; sort?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.query) q.set('query', params.query);
+      if (params?.departmentId) q.set('departmentId', params.departmentId);
+      if (params?.status && params.status !== 'ALL') q.set('status', params.status);
+      if (params?.managerId) q.set('managerId', params.managerId);
+      if (params?.page !== undefined) q.set('page', String(params.page));
+      if (params?.size !== undefined) q.set('size', String(params.size));
+      if (params?.sort) q.set('sort', params.sort);
+      return fetchApi<any>(`/hr/employees?${q.toString()}`);
+    },
+    getEmployee: (id: string) => fetchApi<any>(`/hr/employees/${id}`),
+    updateEmployee: (id: string, payload: Record<string, any>) =>
+      fetchApi<any>(`/hr/employees/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    getEmployeeKnowledge: (id: string) => fetchApi<any>(`/hr/employees/${id}/knowledge`),
   },
 };

@@ -47,6 +47,17 @@ public class SearchService {
                 caller.departmentIdText(), caller.privilegedRead(), pageable);
     }
 
+    private static java.util.UUID toUuid(String val) {
+        if (val == null || val.isBlank() || "ALL".equalsIgnoreCase(val.trim()) || "null".equalsIgnoreCase(val.trim()) || "undefined".equalsIgnoreCase(val.trim())) {
+            return null;
+        }
+        try {
+            return java.util.UUID.fromString(val.trim());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     /**
      * FR-12 filtered search: applies optional filters alongside the full-text query.
      */
@@ -57,9 +68,15 @@ public class SearchService {
         PermissionService.Caller caller = permissionService.currentCaller();
 
         String normalizedQuery = (query != null && !query.isBlank()) ? normalizeQuery(query) : null;
+        java.util.UUID docTypeUuid = toUuid(docTypeId);
+        java.util.UUID deptUuid = toUuid(deptId);
+        java.util.UUID authorUuid = toUuid(authorId);
+        String conf = (confidentiality != null && !confidentiality.isBlank() && !"ALL".equalsIgnoreCase(confidentiality.trim())) ? confidentiality.trim().toUpperCase() : null;
+        String from = (dateFrom != null && !dateFrom.isBlank()) ? dateFrom.trim() : null;
+        String to = (dateTo != null && !dateTo.isBlank()) ? dateTo.trim() : null;
 
         return documentRepository.filteredSearch(
-                normalizedQuery, docTypeId, deptId, confidentiality, authorId, dateFrom, dateTo,
+                normalizedQuery, docTypeUuid, deptUuid, conf, authorUuid, from, to,
                 caller.userIdText(), caller.rolesCsv(), caller.groupsCsv(),
                 caller.departmentIdText(), caller.privilegedRead(), pageable);
     }

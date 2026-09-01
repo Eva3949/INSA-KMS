@@ -286,37 +286,51 @@ public class DocumentService {
      */
     @Transactional(readOnly = true)
     public Map<String, Object> toResponse(Document doc) {
+        if (doc == null) {
+            return new LinkedHashMap<>();
+        }
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", doc.getId());
-        row.put("title", doc.getTitle());
-        row.put("confidentialityLevel", doc.getConfidentialityLevel());
-        row.put("securityClassification", doc.getConfidentialityLevel());
-        row.put("status", doc.getStatus());
-        row.put("isDeleted", doc.getIsDeleted());
+        row.put("title", doc.getTitle() != null ? doc.getTitle() : "Untitled Document");
+        row.put("confidentialityLevel", doc.getConfidentialityLevel() != null ? doc.getConfidentialityLevel() : "INTERNAL");
+        row.put("securityClassification", doc.getConfidentialityLevel() != null ? doc.getConfidentialityLevel() : "INTERNAL");
+        row.put("status", doc.getStatus() != null ? doc.getStatus() : "PUBLISHED");
+        row.put("isDeleted", Boolean.TRUE.equals(doc.getIsDeleted()));
         row.put("createdAt", doc.getCreatedAt());
         row.put("updatedAt", doc.getUpdatedAt());
         row.put("deletedAt", doc.getDeletedAt());
 
         Department dept = doc.getOwnerDepartment();
         if (dept != null) {
-            row.put("department", dept.getName());
-            row.put("ownerDepartment", Map.of(
-                    "id", dept.getId(),
-                    "name", dept.getName() != null ? dept.getName() : "",
-                    "code", dept.getCode() != null ? dept.getCode() : ""));
+            row.put("department", dept.getName() != null ? dept.getName() : "");
+            Map<String, Object> deptMap = new LinkedHashMap<>();
+            deptMap.put("id", dept.getId());
+            deptMap.put("name", dept.getName() != null ? dept.getName() : "");
+            deptMap.put("code", dept.getCode() != null ? dept.getCode() : "");
+            row.put("ownerDepartment", deptMap);
+        } else {
+            row.put("department", "");
+            row.put("ownerDepartment", null);
         }
 
         User author = doc.getAuthor();
         if (author != null) {
-            row.put("owner", author.getUsername());
-            row.put("ownerEmail", author.getEmail());
+            row.put("owner", author.getUsername() != null ? author.getUsername() : "");
+            row.put("ownerEmail", author.getEmail() != null ? author.getEmail() : "");
             row.put("authorId", author.getId());
+        } else {
+            row.put("owner", "");
+            row.put("ownerEmail", "");
+            row.put("authorId", null);
         }
 
         DocumentType type = doc.getDocumentType();
         if (type != null) {
-            row.put("documentType", type.getName());
+            row.put("documentType", type.getName() != null ? type.getName() : "");
             row.put("documentTypeId", type.getId());
+        } else {
+            row.put("documentType", "");
+            row.put("documentTypeId", null);
         }
 
         Folder folder = doc.getFolder();
@@ -327,44 +341,68 @@ public class DocumentService {
         if (version != null) {
             Map<String, Object> versionMap = new LinkedHashMap<>();
             versionMap.put("id", version.getId());
-            versionMap.put("versionNumber", version.getVersionNumber());
-            versionMap.put("fileName", version.getFileName());
-            versionMap.put("mimeType", version.getMimeType());
+            versionMap.put("versionNumber", version.getVersionNumber() != null ? version.getVersionNumber() : 1);
+            versionMap.put("fileName", version.getFileName() != null ? version.getFileName() : "");
+            versionMap.put("mimeType", version.getMimeType() != null ? version.getMimeType() : "application/octet-stream");
             versionMap.put("createdAt", version.getCreatedAt());
 
             StorageObject storageObject = version.getStorageObject();
             if (storageObject != null) {
-                versionMap.put("storageObject", Map.of(
-                        "id", storageObject.getId(),
-                        "fileSizeBytes", storageObject.getFileSizeBytes() != null ? storageObject.getFileSizeBytes() : 0L,
-                        "checksumSha256", storageObject.getChecksumSha256() != null ? storageObject.getChecksumSha256() : ""));
-                row.put("fileSizeBytes", storageObject.getFileSizeBytes());
+                Map<String, Object> soMap = new LinkedHashMap<>();
+                soMap.put("id", storageObject.getId());
+                soMap.put("fileSizeBytes", storageObject.getFileSizeBytes() != null ? storageObject.getFileSizeBytes() : 0L);
+                soMap.put("checksumSha256", storageObject.getChecksumSha256() != null ? storageObject.getChecksumSha256() : "");
+                versionMap.put("storageObject", soMap);
+                row.put("fileSizeBytes", storageObject.getFileSizeBytes() != null ? storageObject.getFileSizeBytes() : 0L);
+            } else {
+                row.put("fileSizeBytes", 0L);
             }
             row.put("currentVersion", versionMap);
-            row.put("fileName", version.getFileName());
-            row.put("mimeType", version.getMimeType());
+            row.put("fileName", version.getFileName() != null ? version.getFileName() : "");
+            row.put("mimeType", version.getMimeType() != null ? version.getMimeType() : "application/octet-stream");
+        } else {
+            row.put("fileSizeBytes", 0L);
+            row.put("currentVersion", null);
+            row.put("fileName", "");
+            row.put("mimeType", "");
         }
 
-        List<com.enterprise.kms.entity.DocumentMetadata> metadatas = documentMetadataRepository.findByDocumentId(doc.getId());
+        List<com.enterprise.kms.entity.DocumentMetadata> metadatas = (documentMetadataRepository != null && doc.getId() != null)
+                ? documentMetadataRepository.findByDocumentId(doc.getId())
+                : List.of();
         Map<String, String> metaMap = new LinkedHashMap<>();
         for (com.enterprise.kms.entity.DocumentMetadata m : metadatas) {
-            metaMap.put(m.getMetadataKey(), m.getMetadataValue());
+            if (m.getMetadataKey() != null) {
+                metaMap.put(m.getMetadataKey(), m.getMetadataValue() != null ? m.getMetadataValue() : "");
+            }
         }
         row.put("metadata", metaMap);
         row.put("executiveSummary", metaMap.getOrDefault("executiveSummary", ""));
         row.put("category", metaMap.getOrDefault("category", "General"));
-        row.put("knowledgeType", metaMap.getOrDefault("knowledgeType", doc.getDocumentType() != null ? doc.getDocumentType().getName() : "Document"));
+        row.put("knowledgeType", metaMap.getOrDefault("knowledgeType", doc.getDocumentType() != null && doc.getDocumentType().getName() != null ? doc.getDocumentType().getName() : "Document"));
         row.put("reviewFrequencyDays", metaMap.getOrDefault("reviewFrequencyDays", "365"));
 
-        boolean isArticle = "text/markdown".equalsIgnoreCase(doc.getCurrentVersion() != null ? doc.getCurrentVersion().getMimeType() : "")
+        boolean isArticle = (doc.getCurrentVersion() != null && "text/markdown".equalsIgnoreCase(doc.getCurrentVersion().getMimeType()))
                 || metaMap.containsKey("executiveSummary")
-                || "Article".equalsIgnoreCase(doc.getDocumentType() != null ? doc.getDocumentType().getName() : "")
-                || "SOP".equalsIgnoreCase(doc.getDocumentType() != null ? doc.getDocumentType().getName() : "");
+                || (doc.getDocumentType() != null && "Article".equalsIgnoreCase(doc.getDocumentType().getName()))
+                || (doc.getDocumentType() != null && "SOP".equalsIgnoreCase(doc.getDocumentType().getName()));
         row.put("isArticle", isArticle);
-        row.put("articleContent", doc.getCurrentVersion() != null ? doc.getCurrentVersion().getExtractedText() : "");
+        row.put("articleContent", doc.getCurrentVersion() != null && doc.getCurrentVersion().getExtractedText() != null ? doc.getCurrentVersion().getExtractedText() : "");
 
-        row.put("legalHold", legalHoldItemRepository.existsByIdDocumentId(doc.getId()));
-        List<String> tagsList = findTagNames(doc.getId());
+        boolean legalHold = false;
+        try {
+            if (legalHoldItemRepository != null && doc.getId() != null) {
+                legalHold = legalHoldItemRepository.existsByIdDocumentId(doc.getId());
+            }
+        } catch (Exception ignored) {}
+        row.put("legalHold", legalHold);
+
+        List<String> tagsList = new ArrayList<>();
+        try {
+            if (doc.getId() != null) {
+                tagsList = findTagNames(doc.getId());
+            }
+        } catch (Exception ignored) {}
         if (tagsList.isEmpty() && metaMap.containsKey("tags") && !metaMap.get("tags").isBlank()) {
             tagsList = java.util.Arrays.stream(metaMap.get("tags").split(","))
                     .map(String::trim).filter(s -> !s.isBlank()).toList();

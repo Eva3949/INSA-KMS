@@ -12,21 +12,22 @@ spring:
       max-request-size: 500MB
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:${DB_URL:jdbc:postgresql://${DATABASE_HOST:${DB_HOST:dpg-da43olv40ujc73cpl09g-a.virginia-postgres.render.com}}:${DATABASE_PORT:${DB_PORT:5432}}/${DATABASE_NAME:${DB_NAME:insakms}}${DATABASE_SSLMODE:${DB_SSLMODE:?sslmode=require}}}}
+    url: ${SPRING_DATASOURCE_URL:${DB_URL:jdbc:postgresql://${DATABASE_HOST:${DB_HOST:dpg-da43olv40ujc73cpl09g-a.virginia-postgres.render.com}}:${DATABASE_PORT:${DB_PORT:5432}}/${DATABASE_NAME:${DB_NAME:insakms}}${DATABASE_SSLMODE:${DB_SSLMODE:?sslmode=require&tcpKeepAlive=true&reWriteBatchedInserts=true}}}}
     username: ${SPRING_DATASOURCE_USERNAME:${DATABASE_USERNAME:${DB_USER:insakms_user}}}
     password: ${SPRING_DATASOURCE_PASSWORD:${DATABASE_PASSWORD:${DB_PASS:hLYoKjsf0GlpZbKCNfSDZ8aRGoR0oMYS}}}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
-      idle-timeout: 30000
+      maximum-pool-size: 5
+      minimum-idle: 1
+      idle-timeout: 300000
+      max-lifetime: 600000
       connection-timeout: 30000
-      validation-timeout: 15000
-      connection-init-sql: SELECT 1
+      validation-timeout: 5000
+      isolate-internal-queries: false
 
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none
     show-sql: false
     properties:
       hibernate:
@@ -48,6 +49,7 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
     locations: classpath:db/migration
+    lock-retry-count: 60
     # Render DB already has a divergent V16 applied (that created the subscriptions
     # table + saved_searches alert columns). Skip checksum validation so startup
     # is not blocked by that already-applied version.

@@ -55,6 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
     { href: '/notifications', label: 'Notifications', icon: Bell, role: 'ROLE_VIEWER' },
     { href: '/my-approvals', label: 'My Submissions', icon: GitPullRequestArrow, role: 'ROLE_CONTRIBUTOR' },
     { href: '/approvals', label: 'Approval Inbox', icon: GitPullRequestArrow, role: 'ROLE_CONTENT_OWNER' },
+    { href: '/knowledge-transfer', label: 'Knowledge Transfer', icon: GitPullRequestArrow, role: 'ROLE_VIEWER' },
     { href: '/profile', label: 'User Profile', icon: User, role: 'ROLE_VIEWER' },
   ];
 
@@ -67,10 +68,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
 
   const adminNav = [
     { href: '/admin', label: 'Admin Dashboard', icon: Settings, role: 'ROLE_ADMIN' },
+    { href: '/hr/employees', label: 'HR & Employee Management', icon: Users, role: 'ROLE_ADMIN' },
     { href: '/admin/users', label: 'Users & Groups', icon: Users, role: 'ROLE_ADMIN' },
-{ href: '/admin/groups', label: 'Groups & Membership', icon: UsersRound, role: 'ROLE_ADMIN' },
+    { href: '/admin/groups', label: 'Groups & Membership', icon: UsersRound, role: 'ROLE_ADMIN' },
     { href: '/admin/roles', label: 'Roles & Matrix', icon: ShieldCheck, role: 'ROLE_ADMIN' },
-{ href: '/admin/permissions', label: 'Access Control', icon: KeyRound, role: 'ROLE_ADMIN' },
+    { href: '/admin/permissions', label: 'Access Control', icon: KeyRound, role: 'ROLE_ADMIN' },
     { href: '/admin/departments', label: 'Departments & Quotas', icon: BarChart2, role: 'ROLE_ADMIN' },
     { href: '/admin/document-types', label: 'Document Categories & Types', icon: FileCheck2, role: 'ROLE_ADMIN' },
     { href: '/admin/taxonomy', label: 'Taxonomy & Tags', icon: Tag, role: 'ROLE_ADMIN' },
@@ -79,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
     { href: '/admin/reports', label: 'Usage & Stale Reports', icon: BarChart2, role: 'ROLE_ADMIN' },
     { href: '/admin/security', label: 'Security Alerts', icon: ShieldAlert, role: 'ROLE_IT_SECURITY' },
     { href: '/admin/approvals', label: 'Approval Workflows', icon: GitPullRequestArrow, role: 'ROLE_ADMIN' },
-{ href: '/admin/settings', label: 'System Settings', icon: Settings, role: 'ROLE_ADMIN' },
+    { href: '/admin/settings', label: 'System Settings', icon: Settings, role: 'ROLE_ADMIN' },
   ];
 
   const isAdmin = hasRole(userRoles, 'ROLE_ADMIN');

@@ -506,6 +506,112 @@ class DepartmentAndCategoryManagementIntegrationTest {
     }
 
     @Test
+    @DisplayName("Filter Isolation - Category A only returns Doc A and excludes Doc B")
+    void testDocTypeFilterIsolation() {
+        UUID catAId = UUID.randomUUID();
+        UUID catBId = UUID.randomUUID();
+
+        DocumentType catA = new DocumentType();
+        catA.setId(catAId);
+        catA.setName("Report");
+
+        DocumentType catB = new DocumentType();
+        catB.setId(catBId);
+        catB.setName("Specification");
+
+        Document docA = new Document();
+        docA.setId(UUID.randomUUID());
+        docA.setTitle("Annual Security Audit Report");
+        docA.setDocumentType(catA);
+
+        com.enterprise.kms.service.SearchService searchService = Mockito.mock(com.enterprise.kms.service.SearchService.class);
+        com.enterprise.kms.service.DocumentService documentService = Mockito.mock(com.enterprise.kms.service.DocumentService.class);
+        com.enterprise.kms.controller.DocumentController docController = new com.enterprise.kms.controller.DocumentController(
+                documentService, null, null, null, null, null, null, null, null, null,
+                documentRepository, null, null, searchService
+        );
+
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+
+        when(searchService.searchDocuments(isNull(), eq(catAId.toString()), isNull(), isNull(), isNull(), isNull(), isNull(), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(docA)));
+        when(documentService.toResponse(docA)).thenReturn(Map.of("id", docA.getId(), "title", docA.getTitle(), "documentType", "Report"));
+
+        ResponseEntity<org.springframework.data.domain.Page<Map<String, Object>>> res =
+                docController.getAllDocuments(null, null, catAId.toString(), null, null, null, pageable);
+        assertEquals(1, res.getBody().getTotalElements());
+        assertEquals("Annual Security Audit Report", res.getBody().getContent().get(0).get("title"));
+        assertEquals("Report", res.getBody().getContent().get(0).get("documentType"));
+    }
+
+    @Test
+    @DisplayName("Combined Filter - Department + Category + Confidentiality (PUBLIC) returns matching document")
+    void testCombinedDepartmentCategoryAndConfidentialityFilter() {
+        UUID deptId = UUID.randomUUID();
+        UUID catId = UUID.randomUUID();
+
+        Document docMatch = new Document();
+        docMatch.setId(UUID.randomUUID());
+        docMatch.setTitle("Public Engineering Guideline");
+        docMatch.setConfidentialityLevel("PUBLIC");
+
+        com.enterprise.kms.service.SearchService searchService = Mockito.mock(com.enterprise.kms.service.SearchService.class);
+        com.enterprise.kms.service.DocumentService documentService = Mockito.mock(com.enterprise.kms.service.DocumentService.class);
+        com.enterprise.kms.controller.DocumentController docController = new com.enterprise.kms.controller.DocumentController(
+                documentService, null, null, null, null, null, null, null, null, null,
+                documentRepository, null, null, searchService
+        );
+
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+
+        when(searchService.searchDocuments(isNull(), eq(catId.toString()), eq(deptId.toString()), eq("PUBLIC"), isNull(), isNull(), isNull(), any()))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(docMatch)));
+        when(documentService.toResponse(docMatch)).thenReturn(Map.of(
+                "id", docMatch.getId(),
+                "title", docMatch.getTitle(),
+                "confidentialityLevel", "PUBLIC"
+        ));
+
+        ResponseEntity<org.springframework.data.domain.Page<Map<String, Object>>> response =
+                docController.getAllDocuments(deptId.toString(), null, catId.toString(), null, "PUBLIC", null, pageable);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(1, response.getBody().getTotalElements());
+        assertEquals("Public Engineering Guideline", response.getBody().getContent().get(0).get("title"));
+        assertEquals("PUBLIC", response.getBody().getContent().get(0).get("confidentialityLevel"));
+    }
+
+    @Test
+    @DisplayName("SearchService - Converts String UUIDs to java.util.UUID for filteredSearch repository call")
+    void testSearchServiceUUIDConversion() {
+        UUID deptId = UUID.randomUUID();
+        UUID catId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+
+        Document doc = new Document();
+        doc.setId(UUID.randomUUID());
+        doc.setTitle("Architecture Whitepaper");
+
+        com.enterprise.kms.service.PermissionService permissionService = Mockito.mock(com.enterprise.kms.service.PermissionService.class);
+        when(permissionService.currentCaller()).thenReturn(new com.enterprise.kms.service.PermissionService.Caller());
+        when(documentRepository.filteredSearch(
+                isNull(), eq(catId), eq(deptId), eq("PUBLIC"), eq(authorId), isNull(), isNull(),
+                any(), any(), any(), any(), anyBoolean(), any()
+        )).thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(doc)));
+
+        com.enterprise.kms.service.SearchService realSearchService =
+                new com.enterprise.kms.service.SearchService(documentRepository, permissionService);
+
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 10);
+        org.springframework.data.domain.Page<Document> result =
+                realSearchService.searchDocuments(null, catId.toString(), deptId.toString(), "PUBLIC", authorId.toString(), null, null, pageable);
+
+        assertNotNull(result);
+        assertEquals(1, result.getTotalElements());
+        assertEquals("Architecture Whitepaper", result.getContent().get(0).getTitle());
+    }
+
+    @Test
     @DisplayName("Filter Reset - ALL and empty parameters trigger full active document retrieval")
     void testAllAndNullFilterHandling() {
         com.enterprise.kms.service.SearchService searchService = Mockito.mock(com.enterprise.kms.service.SearchService.class);

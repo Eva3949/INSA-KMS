@@ -128,18 +128,18 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
             "             (fp.subject_type = 'USER'  AND fp.subject_id = :userId) " +
             "          OR (fp.subject_type = 'ROLE'  AND fp.subject_id = ANY(string_to_array(:roles, ','))) " +
             "          OR (fp.subject_type = 'GROUP' AND fp.subject_id = ANY(string_to_array(:groups, ','))) ) )) " +
-            "   OR d.confidentiality_level IN ('PUBLIC', 'INTERNAL') " +
-            "   OR (d.confidentiality_level = 'CONFIDENTIAL' AND d.owner_department_id = CAST(:departmentId AS uuid)) " +
+            "   OR d.confidentiality_level::text IN ('PUBLIC', 'INTERNAL') " +
+            "   OR (d.confidentiality_level::text = 'CONFIDENTIAL' AND d.owner_department_id = CAST(:departmentId AS uuid)) " +
             " ) ";
 
     @Query(value = "SELECT d.* FROM documents d " +
                    "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
+                   "WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' AND " +
                    "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
                    "AND " + ACL_PREDICATE,
            countQuery = "SELECT count(d.id) FROM documents d " +
                         "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                        "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
+                        "WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' AND " +
                         "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
                         "AND " + ACL_PREDICATE,
            nativeQuery = true)
@@ -151,8 +151,8 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                                             @Param("privileged") boolean privileged,
                                             Pageable pageable);
 
-    @Query(value = "SELECT d.* FROM documents d WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " + ACL_PREDICATE,
-           countQuery = "SELECT count(d.id) FROM documents d WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " + ACL_PREDICATE,
+    @Query(value = "SELECT d.* FROM documents d WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' AND " + ACL_PREDICATE,
+           countQuery = "SELECT count(d.id) FROM documents d WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' AND " + ACL_PREDICATE,
            nativeQuery = true)
     Page<Document> findAuthorized(@Param("userId") String userId,
                                   @Param("roles") String roles,
@@ -164,11 +164,11 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     @Query(value = "SELECT d.* FROM documents d " +
                    "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
+                   "WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' AND " +
                    "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)",
            countQuery = "SELECT count(d.id) FROM documents d " +
                         "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                        "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
+                        "WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' AND " +
                         "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query)",
            nativeQuery = true)
     Page<Document> fullTextSearch(@Param("query") String query, Pageable pageable);
@@ -179,35 +179,35 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
                    "LEFT JOIN document_types dt ON d.document_type_id = dt.id " +
                    "LEFT JOIN users u ON d.author_user_id = u.id " +
                    "LEFT JOIN departments dep ON d.owner_department_id = dep.id " +
-                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' " +
+                   "WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' " +
                    "AND (CAST(:query AS varchar) IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || coalesce(dv.file_name, '') || ' ' || coalesce(d.title, '')) @@ plainto_tsquery('english', CAST(:query AS varchar))) " +
-                   "AND (CAST(:docTypeId AS varchar) IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
-                   "AND (CAST(:deptId AS varchar) IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
-                   "AND (CAST(:confidentiality AS varchar) IS NULL OR d.confidentiality_level = CAST(:confidentiality AS varchar)) " +
-                   "AND (CAST(:authorId AS varchar) IS NULL OR d.author_user_id = CAST(:authorId AS uuid)) " +
-                   "AND (CAST(:dateFrom AS varchar) IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
-                   "AND (CAST(:dateTo AS varchar) IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
+                   "AND (:docTypeId IS NULL OR d.document_type_id = :docTypeId) " +
+                   "AND (:deptId IS NULL OR d.owner_department_id = :deptId) " +
+                   "AND (:confidentiality IS NULL OR d.confidentiality_level::text = :confidentiality) " +
+                   "AND (:authorId IS NULL OR d.author_user_id = :authorId) " +
+                   "AND (:dateFrom IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
+                   "AND (:dateTo IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
                    "AND " + ACL_PREDICATE,
            countQuery = "SELECT count(d.id) FROM documents d " +
                    "LEFT JOIN document_versions dv ON d.current_version_id = dv.id " +
                    "LEFT JOIN document_types dt ON d.document_type_id = dt.id " +
                    "LEFT JOIN users u ON d.author_user_id = u.id " +
                    "LEFT JOIN departments dep ON d.owner_department_id = dep.id " +
-                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' " +
+                   "WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' " +
                    "AND (CAST(:query AS varchar) IS NULL OR to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || coalesce(dv.file_name, '') || ' ' || coalesce(d.title, '')) @@ plainto_tsquery('english', CAST(:query AS varchar))) " +
-                   "AND (CAST(:docTypeId AS varchar) IS NULL OR d.document_type_id = CAST(:docTypeId AS uuid)) " +
-                   "AND (CAST(:deptId AS varchar) IS NULL OR d.owner_department_id = CAST(:deptId AS uuid)) " +
-                   "AND (CAST(:confidentiality AS varchar) IS NULL OR d.confidentiality_level = CAST(:confidentiality AS varchar)) " +
-                   "AND (CAST(:authorId AS varchar) IS NULL OR d.author_user_id = CAST(:authorId AS uuid)) " +
-                   "AND (CAST(:dateFrom AS varchar) IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
-                   "AND (CAST(:dateTo AS varchar) IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
+                   "AND (:docTypeId IS NULL OR d.document_type_id = :docTypeId) " +
+                   "AND (:deptId IS NULL OR d.owner_department_id = :deptId) " +
+                   "AND (:confidentiality IS NULL OR d.confidentiality_level::text = :confidentiality) " +
+                   "AND (:authorId IS NULL OR d.author_user_id = :authorId) " +
+                   "AND (:dateFrom IS NULL OR d.created_at >= CAST(:dateFrom AS timestamptz)) " +
+                   "AND (:dateTo IS NULL OR d.created_at <= CAST(:dateTo AS timestamptz)) " +
                    "AND " + ACL_PREDICATE,
            nativeQuery = true)
     Page<Document> filteredSearch(@Param("query") String query,
-                                  @Param("docTypeId") String docTypeId,
-                                  @Param("deptId") String deptId,
+                                  @Param("docTypeId") UUID docTypeId,
+                                  @Param("deptId") UUID deptId,
                                   @Param("confidentiality") String confidentiality,
-                                  @Param("authorId") String authorId,
+                                  @Param("authorId") UUID authorId,
                                   @Param("dateFrom") String dateFrom,
                                   @Param("dateTo") String dateTo,
                                   @Param("userId") String userId,
@@ -220,14 +220,14 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
     /** FR-14 improved ranking: combines ts_rank_cd with recency signal. */
     @Query(value = "SELECT d.* FROM documents d " +
                    "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
+                   "WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' AND " +
                    "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
                    "AND " + ACL_PREDICATE + " " +
                    "ORDER BY (ts_rank_cd(to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title), plainto_tsquery('english', :query)) * 0.7 " +
                    "+ (1.0 / (1.0 + extract(epoch from (NOW() - d.updated_at)) / 86400.0)) * 0.3) DESC",
            countQuery = "SELECT count(d.id) FROM documents d " +
                    "JOIN document_versions dv ON d.current_version_id = dv.id " +
-                   "WHERE d.is_deleted = false AND d.status = 'PUBLISHED' AND " +
+                   "WHERE d.is_deleted = false AND d.status::text = 'PUBLISHED' AND " +
                    "to_tsvector('english', coalesce(dv.extracted_text, '') || ' ' || dv.file_name || ' ' || d.title) @@ plainto_tsquery('english', :query) " +
                    "AND " + ACL_PREDICATE,
            nativeQuery = true)

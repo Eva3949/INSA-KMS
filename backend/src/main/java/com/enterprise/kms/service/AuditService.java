@@ -24,7 +24,17 @@ public class AuditService {
         log.setResourceType(resourceType != null ? resourceType : "SYSTEM");
         log.setResourceId(resourceId != null ? resourceId : "N/A");
         log.setIpAddress(ipAddress);
-        log.setDetailsJson(detailsJson);
+        
+        String validJson = detailsJson;
+        if (validJson == null || validJson.isBlank()) {
+            validJson = "{}";
+        } else {
+            String trimmed = validJson.trim();
+            if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+                validJson = "{\"message\":\"" + trimmed.replace("\"", "\\\"").replace("\r", "").replace("\n", " ") + "\"}";
+            }
+        }
+        log.setDetailsJson(validJson);
         return auditLogRepository.save(log);
     }
 

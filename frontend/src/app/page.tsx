@@ -65,7 +65,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function DashboardOverviewPage() {
-  const { roles } = useAuth();
+  const { isAuthenticated, roles } = useAuth();
   const isAdmin = roles.includes('ROLE_ADMIN');
 
   const [summary, setSummary] = useState<AdminSummary | null>(null);
@@ -84,15 +84,16 @@ export default function DashboardOverviewPage() {
   const [sharedLoading, setSharedLoading] = useState(false);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAuthenticated || !isAdmin) return;
     setSummaryLoading(true);
     kmsApi.admin.getSummary()
       .then((data) => setSummary(data as AdminSummary))
       .catch((err: unknown) => setSummaryError(err instanceof Error ? err.message : 'Failed to load summary'))
       .finally(() => setSummaryLoading(false));
-  }, [isAdmin]);
+  }, [isAuthenticated, isAdmin]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     setDocsLoading(true);
     kmsApi.documents.list(0, 5)
       .then((data) => {
@@ -108,9 +109,10 @@ export default function DashboardOverviewPage() {
         }
       })
       .finally(() => setDocsLoading(false));
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     setMyDocsLoading(true);
     kmsApi.documents.mine()
       .then((data) => {
@@ -119,9 +121,10 @@ export default function DashboardOverviewPage() {
       })
       .catch(() => setMyDocsCount(0))
       .finally(() => setMyDocsLoading(false));
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     setFavoritesLoading(true);
     kmsApi.documents.getFavorites()
       .then((data) => {
@@ -130,9 +133,10 @@ export default function DashboardOverviewPage() {
       })
       .catch(() => setFavorites([]))
       .finally(() => setFavoritesLoading(false));
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
     setSharedLoading(true);
     kmsApi.documents.getSharedWithMe()
       .then((data) => {
@@ -141,7 +145,7 @@ export default function DashboardOverviewPage() {
       })
       .catch(() => setSharedCount(0))
       .finally(() => setSharedLoading(false));
-  }, []);
+  }, [isAuthenticated]);
 
   const docColumns = [
     {
