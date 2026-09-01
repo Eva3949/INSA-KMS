@@ -177,11 +177,41 @@ public class KnowledgeTransferService {
     public Page<Map<String, Object>> listCases(
             UUID employeeId, UUID managerId, UUID successorId, UUID deptId,
             String status, String search, Pageable pageable) {
-        String effectiveStatus = (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status.trim())) ? status.trim() : null;
-        String effectiveSearch = (search != null && !search.isBlank()) ? search.trim() : null;
+        String effectiveStatus = (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status.trim())) ? status.trim().toUpperCase() : null;
+        String effectiveSearch = (search != null && !search.isBlank()) ? search.trim().toLowerCase() : null;
 
-        return caseRepository.findFiltered(employeeId, managerId, successorId, deptId, effectiveStatus, effectiveSearch, pageable)
-                .map(this::caseToResponse);
+        org.springframework.data.jpa.domain.Specification<KnowledgeTransferCase> spec = (root, q, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get("isDeleted")));
+            if (employeeId != null) {
+                predicates.add(cb.equal(root.get("employee").get("id"), employeeId));
+            }
+            if (managerId != null) {
+                predicates.add(cb.equal(root.get("manager").get("id"), managerId));
+            }
+            if (successorId != null) {
+                predicates.add(cb.equal(root.get("successor").get("id"), successorId));
+            }
+            if (deptId != null) {
+                predicates.add(cb.equal(root.get("department").get("id"), deptId));
+            }
+            if (effectiveStatus != null) {
+                predicates.add(cb.equal(root.get("status"), effectiveStatus));
+            }
+            if (effectiveSearch != null) {
+                String pattern = "%" + effectiveSearch + "%";
+                jakarta.persistence.criteria.Predicate titleMatch = cb.like(cb.lower(root.get("title")), pattern);
+                jakarta.persistence.criteria.Predicate usernameMatch = cb.like(cb.lower(root.get("employee").get("username")), pattern);
+                jakarta.persistence.criteria.Predicate fullNameMatch = cb.and(
+                        cb.isNotNull(root.get("employee").get("fullName")),
+                        cb.like(cb.lower(root.get("employee").get("fullName")), pattern)
+                );
+                predicates.add(cb.or(titleMatch, usernameMatch, fullNameMatch));
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        return caseRepository.findAll(spec, pageable).map(this::caseToResponse);
     }
 
     @Transactional(readOnly = true)
