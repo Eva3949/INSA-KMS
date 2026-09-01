@@ -20,9 +20,9 @@ public class AuditService {
         AuditLogEntity log = new AuditLogEntity();
         log.setUserId(userId != null ? userId : "anonymous");
         log.setUserEmail(userEmail);
-        log.setAction(action);
-        log.setResourceType(resourceType);
-        log.setResourceId(resourceId);
+        log.setAction(action != null ? action : "UNKNOWN");
+        log.setResourceType(resourceType != null ? resourceType : "SYSTEM");
+        log.setResourceId(resourceId != null ? resourceId : "N/A");
         log.setIpAddress(ipAddress);
         log.setDetailsJson(detailsJson);
         return auditLogRepository.save(log);

@@ -126,8 +126,9 @@ public class KeycloakAdminService {
             Map<String, Object> credential = new LinkedHashMap<>();
             credential.put("type", "password");
             credential.put("value", password);
-            credential.put("temporary", temporaryPassword);
+            credential.put("temporary", false);
             payload.put("credentials", List.of(credential));
+            payload.put("requiredActions", List.of("UPDATE_PASSWORD"));
         }
 
         String userId;
@@ -267,6 +268,221 @@ public class KeycloakAdminService {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> findUserByEmail(String email) {
+        if (!enabled || email == null || email.isBlank()) {
+            return null;
+        }
+        String token = adminToken();
+        List<Map<String, Object>> found = restClient.get()
+                .uri(baseUrl + "/admin/realms/" + realm + "/users?exact=true&email="
+                        + java.net.URLEncoder.encode(email, java.nio.charset.StandardCharsets.UTF_8))
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .body(List.class);
+        return (found == null || found.isEmpty()) ? null : found.get(0);
+    }
+
+    public Map<String, Object> findUserByUsernameOrEmail(String identifier) {
+        if (identifier == null || identifier.isBlank()) return null;
+        Map<String, Object> user = findUserByUsername(identifier);
+        if (user == null && identifier.contains("@")) {
+            user = findUserByEmail(identifier);
+        }
+        return user;
+    }
+
+    public void sendForgotPasswordEmail(String usernameOrEmail) {
+        if (!enabled) {
+            log.warn("Keycloak sync disabled — forgot password email skipped");
+            return;
+        }
+        Map<String, Object> user = findUserByUsernameOrEmail(usernameOrEmail);
+        if (user == null) {
+            log.warn("User {} not found in Keycloak for password reset request", usernameOrEmail);
+            return;
+        }
+        String userId = user.get("id").toString();
+        String token = adminToken();
+        try {
+            restClient.put()
+                    .uri(baseUrl + "/admin/realms/" + realm + "/users/" + userId + "/execute-actions-email")
+                    .header("Authorization", "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(List.of("UPDATE_PASSWORD"))
+                    .retrieve()
+                    .toBodilessEntity();
+            log.info("Sent UPDATE_PASSWORD execute-actions-email to user {}", userId);
+        } catch (Exception e) {
+            log.error("Failed to send execute-actions-email via Keycloak/SMTP", e);
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Keycloak failed to send password reset email (check SMTP configuration): " + e.getMessage());
+        }
+    }
+
+    public enum VerificationResult {
+        VALID,
+        UPDATE_PASSWORD_REQUIRED,
+        INVALID
+    }
+
+    public VerificationResult verifyCredentialsDetail(String username, String password) {
+        if (!enabled) {
+            return VerificationResult.VALID;
+        }
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("username", username);
+        form.add("password", password);
+        form.add("grant_type", "password");
+        form.add("client_id", "kms-frontend-client");
+
+        try {
+            Map<?, ?> response = restClient.post()
+                    .uri(baseUrl + "/realms/" + realm + "/protocol/openid-connect/token")
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form)
+                    .retrieve()
+                    .body(Map.class);
+            if (response != null && response.get("access_token") != null) {
+                return VerificationResult.VALID;
+            }
+            return VerificationResult.INVALID;
+        } catch (Exception e) {
+            String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+            boolean isInvalidCreds = msg.contains("invalid user credentials") || msg.contains("invalid credentials");
+            if (!isInvalidCreds || msg.contains("account") || msg.contains("update_password") || msg.contains("action")) {
+                return VerificationResult.UPDATE_PASSWORD_REQUIRED;
+            }
+            log.warn("Credential verification failed for user {}: {}", username, e.getMessage());
+            return VerificationResult.INVALID;
+        }
+    }
+
+    public boolean verifyCredentials(String username, String password) {
+        VerificationResult res = verifyCredentialsDetail(username, password);
+        return res == VerificationResult.VALID || res == VerificationResult.UPDATE_PASSWORD_REQUIRED;
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> authenticateUser(String username, String password) {
+        if (!enabled) {
+            Map<String, Object> res = new LinkedHashMap<>();
+            res.put("status", "SUCCESS");
+            res.put("access_token", "dummy-token-disabled");
+            return res;
+        }
+
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("username", username);
+        form.add("password", password);
+        form.add("grant_type", "password");
+        form.add("client_id", "kms-frontend-client");
+
+        try {
+            Map<String, Object> response = restClient.post()
+                    .uri(baseUrl + "/realms/" + realm + "/protocol/openid-connect/token")
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form)
+                    .retrieve()
+                    .body(Map.class);
+            if (response != null && response.get("access_token") != null) {
+                Map<String, Object> res = new LinkedHashMap<>();
+                res.put("status", "SUCCESS");
+                res.put("access_token", response.get("access_token"));
+                if (response.containsKey("refresh_token")) {
+                    res.put("refresh_token", response.get("refresh_token"));
+                }
+                return res;
+            }
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
+        } catch (ResponseStatusException rse) {
+            throw rse;
+        } catch (Exception e) {
+            String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+            boolean isInvalidCreds = msg.contains("invalid user credentials") || msg.contains("invalid credentials");
+            if (!isInvalidCreds || msg.contains("account") || msg.contains("update_password") || msg.contains("action")) {
+                Map<String, Object> res = new LinkedHashMap<>();
+                res.put("status", "UPDATE_PASSWORD_REQUIRED");
+                res.put("username", username);
+                return res;
+            }
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
+        }
+    }
+
+    public void clearRequiredActions(String keycloakUserId) {
+        if (!enabled || keycloakUserId == null) return;
+        String token = adminToken();
+        try {
+            restClient.put()
+                    .uri(baseUrl + "/admin/realms/" + realm + "/users/" + keycloakUserId)
+                    .header("Authorization", "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("requiredActions", List.of()))
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception e) {
+            log.warn("Failed to clear requiredActions for user {}: {}", keycloakUserId, e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public void addRequiredAction(String keycloakUserId, String action) {
+        if (!enabled || keycloakUserId == null || action == null) return;
+        String token = adminToken();
+        try {
+            Map<String, Object> user = restClient.get()
+                    .uri(baseUrl + "/admin/realms/" + realm + "/users/" + keycloakUserId)
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .body(Map.class);
+            List<String> actions = new ArrayList<>();
+            if (user != null && user.get("requiredActions") instanceof List) {
+                actions.addAll((List<String>) user.get("requiredActions"));
+            }
+            if (!actions.contains(action)) {
+                actions.add(action);
+            }
+            restClient.put()
+                    .uri(baseUrl + "/admin/realms/" + realm + "/users/" + keycloakUserId)
+                    .header("Authorization", "Bearer " + token)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("requiredActions", actions))
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception e) {
+            log.warn("Failed to add requiredAction {} for user {}: {}", action, keycloakUserId, e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public void removeRequiredAction(String keycloakUserId, String action) {
+        if (!enabled || keycloakUserId == null || action == null) return;
+        String token = adminToken();
+        try {
+            Map<String, Object> user = restClient.get()
+                    .uri(baseUrl + "/admin/realms/" + realm + "/users/" + keycloakUserId)
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .body(Map.class);
+            List<String> actions = new ArrayList<>();
+            if (user != null && user.get("requiredActions") instanceof List) {
+                actions.addAll((List<String>) user.get("requiredActions"));
+            }
+            if (actions.remove(action)) {
+                restClient.put()
+                        .uri(baseUrl + "/admin/realms/" + realm + "/users/" + keycloakUserId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of("requiredActions", actions))
+                        .retrieve()
+                        .toBodilessEntity();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to remove requiredAction {} for user {}: {}", action, keycloakUserId, e.getMessage());
+        }
+    }
+
     public void resetPassword(String keycloakUserId, String password, boolean temporary) {
         if (!enabled || keycloakUserId == null) {
             return;
@@ -277,7 +493,7 @@ public class KeycloakAdminService {
                     .uri(baseUrl + "/admin/realms/" + realm + "/users/" + keycloakUserId + "/reset-password")
                     .header("Authorization", "Bearer " + token)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("type", "password", "value", password, "temporary", temporary))
+                    .body(Map.of("type", "password", "value", password, "temporary", false))
                     .retrieve()
                     .toBodilessEntity();
         } catch (Exception e) {
@@ -314,3 +530,4 @@ public class KeycloakAdminService {
         return status;
     }
 }
+

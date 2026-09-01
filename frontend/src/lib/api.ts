@@ -43,6 +43,35 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
 }
 
 export const kmsApi = {
+  // Auth
+  auth: {
+    login: (username: string, password: string) =>
+      fetchApi<{ status: string; access_token?: string; refresh_token?: string; username?: string }>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      }),
+    forgotPassword: (emailOrUsername: string) =>
+      fetchApi<{ message: string; status: string }>('/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ emailOrUsername }),
+      }),
+    changePassword: (currentPassword: string, newPassword: string, confirmPassword?: string) =>
+      fetchApi<{ message: string; status: string }>('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+      }),
+    forcedPasswordChange: (data: {
+      username: string;
+      currentPassword: string;
+      newPassword: string;
+      confirmPassword?: string;
+    }) =>
+      fetchApi<{ message: string; status: string }>('/auth/forced-password-change', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+  },
+
   // Health
   getHealthStatus: () => fetchApi<{ status: string; service: string }>('/health'),
 

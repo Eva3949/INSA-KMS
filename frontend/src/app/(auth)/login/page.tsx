@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Lock, Eye, EyeOff, ShieldCheck, Info, Loader2 } from 'lucide-react';
+import { Lock, Eye, EyeOff, ShieldCheck, Info, Loader2, Mail, CheckCircle2, X } from 'lucide-react';
 import { Button } from '@/src/components/ui/Button';
 import { Input } from '@/src/components/ui/Input';
+import { kmsApi } from '@/src/lib/api';
 
 const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
 const REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'kms-realm';
@@ -18,54 +19,54 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  /**
-   * Direct Grant (ROPC) Login Flow:
-   * 1. POST credentials to Keycloak token endpoint — no browser redirect to Keycloak
-   * 2. Store the JWT access token in sessionStorage
-   * 3. Fetch user profile from Spring Boot backend
-   * 4. Redirect to /admin (admins) or /library (others)
-   */
+  // Forgot Password modal states
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+
+  // Forced Password Change modal states
+  const [showForcedModal, setShowForcedModal] = useState(false);
+  const [forcedUsername, setForcedUsername] = useState('');
+  const [forcedCurrentPassword, setForcedCurrentPassword] = useState('');
+  const [forcedNewPassword, setForcedNewPassword] = useState('');
+  const [forcedConfirmPassword, setForcedConfirmPassword] = useState('');
+  const [forcedLoading, setForcedLoading] = useState(false);
+  const [forcedSuccess, setForcedSuccess] = useState<string | null>(null);
+  const [forcedError, setForcedError] = useState<string | null>(null);
+
   const handleDirectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setIsLoading(true);
 
     try {
-      // Step 1: Get access token directly from Keycloak (runs in background, no redirect)
-      const tokenRes = await fetch(
-        `${KEYCLOAK_URL}/realms/${REALM}/protocol/openid-connect/token`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            grant_type: 'password',
-            client_id: CLIENT_ID,
-            username: username.trim(),
-            password,
-            scope: 'openid profile email',
-          }),
-        }
-      );
+      const loginRes = await kmsApi.auth.login(username.trim(), password);
 
-      if (!tokenRes.ok) {
-        const errData = await tokenRes.json().catch(() => ({}));
-        if (errData?.error === 'invalid_grant') {
-          throw new Error('Invalid username or password. Please try again.');
-        }
-        throw new Error(errData?.error_description || 'Authentication failed. Please try again.');
+      if (loginRes.status === 'UPDATE_PASSWORD_REQUIRED') {
+        setForcedUsername(username.trim());
+        setForcedCurrentPassword(password);
+        setForcedNewPassword('');
+        setForcedConfirmPassword('');
+        setForcedError(null);
+        setForcedSuccess(null);
+        setShowForcedModal(true);
+        setIsLoading(false);
+        return;
       }
 
-      const tokenData = await tokenRes.json();
-      const accessToken: string = tokenData.access_token;
+      if (!loginRes.access_token) {
+        throw new Error('Authentication failed. No access token received.');
+      }
 
-      // Step 2: Store token — user stays on localhost:3000 entirely
+      const accessToken: string = loginRes.access_token;
       sessionStorage.setItem('kms_access_token', accessToken);
-      if (tokenData.refresh_token) {
-        sessionStorage.setItem('kms_refresh_token', tokenData.refresh_token);
+      if (loginRes.refresh_token) {
+        sessionStorage.setItem('kms_refresh_token', loginRes.refresh_token);
       }
       document.cookie = 'kms_auth_present=true; path=/; samesite=lax';
 
-      // Step 3: Fetch user role from backend for role-based redirect
       let redirectPath = '/library';
       try {
         const profileRes = await fetch(`${API_BASE_URL}/users/me`, {
@@ -83,16 +84,80 @@ export default function LoginPage() {
           }
         }
       } catch {
-        // Backend unavailable — use default library redirect
+        // Default library redirect
       }
 
-      // Step 4: Navigate to dashboard directly — Keycloak page never opens
       window.location.href = redirectPath;
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Authentication failed. Please try again.';
+      const rawMsg = err instanceof Error ? err.message : 'Authentication failed. Please try again.';
+      const message = rawMsg.replace(/^API Error \[\d+\]:\s*/, '');
       setErrorMessage(message);
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotSuccess(null);
+
+    if (!forgotIdentifier.trim()) {
+      setForgotError('Please enter your username or registered email address.');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const res = await kmsApi.auth.forgotPassword(forgotIdentifier.trim());
+      setForgotSuccess(res.message || 'Password reset email sent! Check your inbox.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send password reset email.';
+      setForgotError(msg.replace(/^API Error \[\d+\]:\s*/, ''));
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleForcedSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForcedError(null);
+    setForcedSuccess(null);
+
+    if (forcedNewPassword.length < 8) {
+      setForcedError('New password must be at least 8 characters long.');
+      return;
+    }
+    if (forcedNewPassword !== forcedConfirmPassword) {
+      setForcedError('New password and confirmation do not match.');
+      return;
+    }
+    if (forcedNewPassword === forcedCurrentPassword) {
+      setForcedError('New password must be different from current password.');
+      return;
+    }
+
+    setForcedLoading(true);
+    try {
+      await kmsApi.auth.forcedPasswordChange({
+        username: forcedUsername.trim(),
+        currentPassword: forcedCurrentPassword,
+        newPassword: forcedNewPassword,
+        confirmPassword: forcedConfirmPassword,
+      });
+      setForcedSuccess('Password changed successfully! Signing in...');
+      // Update form values and automatically sign in
+      setUsername(forcedUsername);
+      setPassword(forcedNewPassword);
+      setTimeout(() => {
+        setShowForcedModal(false);
+        const formEl = document.querySelector('form');
+        if (formEl) formEl.requestSubmit();
+      }, 800);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to change password.';
+      setForcedError(msg.replace(/^API Error \[\d+\]:\s*/, ''));
+    } finally {
+      setForcedLoading(false);
     }
   };
 
@@ -179,7 +244,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {/* Remember Me */}
+              {/* Remember Me & Forgot Password */}
               <div className="flex items-center justify-between pt-1">
                 <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600 font-medium">
                   <input
@@ -190,6 +255,19 @@ export default function LoginPage() {
                   />
                   <span>Remember me</span>
                 </label>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotModal(true);
+                    setForgotSuccess(null);
+                    setForgotError(null);
+                    setForgotIdentifier(username || '');
+                  }}
+                  className="text-xs text-blue-700 hover:text-blue-900 font-medium focus:outline-none hover:underline"
+                >
+                  Forgot password?
+                </button>
               </div>
 
               {/* Sign In Button */}
@@ -242,6 +320,198 @@ export default function LoginPage() {
         </div>
       </div>
 
+      {/* Forgot Password Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-base">
+                <Mail className="w-5 h-5 text-blue-700" />
+                <span>Reset Password</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Enter your registered username or email address. Keycloak will initiate password reset and send instructions to your inbox.
+              </p>
+
+              {forgotSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>{forgotSuccess}</div>
+                </div>
+              )}
+
+              {forgotError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg flex items-start gap-2">
+                  <Info className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>{forgotError}</div>
+                </div>
+              )}
+
+              {!forgotSuccess && (
+                <form onSubmit={handleForgotSubmit} className="space-y-4">
+                  <Input
+                    label="Username or Email"
+                    type="text"
+                    placeholder="e.g. user@kms.internal or username"
+                    value={forgotIdentifier}
+                    onChange={(e) => setForgotIdentifier(e.target.value)}
+                    required
+                  />
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowForgotModal(false)}
+                      disabled={forgotLoading}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      className="bg-blue-700 hover:bg-blue-800 text-white font-bold"
+                      disabled={forgotLoading}
+                      icon={forgotLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : undefined}
+                    >
+                      {forgotLoading ? 'Sending...' : 'Send Reset Link'}
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              {forgotSuccess && (
+                <div className="flex justify-end pt-2">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    className="bg-blue-700 hover:bg-blue-800 text-white font-bold"
+                    onClick={() => setShowForgotModal(false)}
+                  >
+                    Done
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Forced Password Change Modal */}
+      {showForcedModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-blue-900 text-white">
+              <div className="flex items-center gap-2 font-bold text-base">
+                <Lock className="w-5 h-5 text-blue-300" />
+                <span>Password Change Required</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowForcedModal(false)}
+                className="text-blue-200 hover:text-white p-1 rounded-lg hover:bg-blue-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Your account requires a mandatory password update before continuing. Please create a new password below.
+              </p>
+
+              {forcedSuccess && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div>{forcedSuccess}</div>
+                </div>
+              )}
+
+              {forcedError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg flex items-start gap-2">
+                  <Info className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>{forcedError}</div>
+                </div>
+              )}
+
+              {!forcedSuccess && (
+                <form onSubmit={handleForcedSubmit} className="space-y-4">
+                  <Input
+                    label="Username / Email"
+                    type="text"
+                    value={forcedUsername}
+                    onChange={(e) => setForcedUsername(e.target.value)}
+                    required
+                  />
+
+                  <Input
+                    label="Current / Assigned Password"
+                    type="password"
+                    placeholder="••••••••••••"
+                    value={forcedCurrentPassword}
+                    onChange={(e) => setForcedCurrentPassword(e.target.value)}
+                    required
+                  />
+
+                  <Input
+                    label="New Password"
+                    type="password"
+                    placeholder="At least 8 characters"
+                    value={forcedNewPassword}
+                    onChange={(e) => setForcedNewPassword(e.target.value)}
+                    required
+                  />
+
+                  <Input
+                    label="Confirm New Password"
+                    type="password"
+                    placeholder="Re-enter new password"
+                    value={forcedConfirmPassword}
+                    onChange={(e) => setForcedConfirmPassword(e.target.value)}
+                    required
+                  />
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowForcedModal(false)}
+                      disabled={forcedLoading}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      className="bg-blue-700 hover:bg-blue-800 text-white font-bold"
+                      disabled={forcedLoading}
+                      icon={forcedLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : undefined}
+                    >
+                      {forcedLoading ? 'Updating Password...' : 'Update Password & Sign In'}
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <footer className="p-4 text-center text-xs text-slate-500 border-t border-slate-200 bg-white">
         <div className="font-semibold text-slate-700">INSA Knowledge Management System</div>
@@ -250,3 +520,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

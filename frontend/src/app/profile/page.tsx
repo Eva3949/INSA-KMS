@@ -7,7 +7,7 @@ import { Card } from '@/src/components/ui/Card';
 import { Badge } from '@/src/components/ui/Badge';
 import { Button } from '@/src/components/ui/Button';
 import { LoadingState, ErrorState } from '@/src/components/ui/States';
-import { User, ShieldCheck, LogOut } from 'lucide-react';
+import { User, ShieldCheck, LogOut, KeyRound } from 'lucide-react';
 import { kmsApi } from '@/src/lib/api';
 import { useAuth } from '@/src/lib/auth-context';
 import { UserRole } from '@/src/lib/auth';
@@ -26,6 +26,43 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Change Password state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [changeSuccess, setChangeSuccess] = useState<string | null>(null);
+  const [changeError, setChangeError] = useState<string | null>(null);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangeError(null);
+    setChangeSuccess(null);
+
+    if (newPassword.length < 8) {
+      setChangeError('New password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangeError('New password and confirm password do not match.');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const res = await kmsApi.auth.changePassword(currentPassword, newPassword, confirmPassword);
+      setChangeSuccess(res.message || 'Password changed successfully in Keycloak!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to change password.';
+      setChangeError(msg.replace(/^API Error \[\d+\]:\s*/, ''));
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   const loadProfile = () => {
     setIsLoading(true);
@@ -85,6 +122,85 @@ export default function ProfilePage() {
                     )}
                   </div>
                 </div>
+              </div>
+            </Card>
+
+            {/* Change Password Card */}
+            <Card title="Security & Password Management">
+              <div className="space-y-4">
+                <p className="text-xs text-kms-slate-600">
+                  Update your Keycloak account password. Password operations update Keycloak identity credentials directly.
+                </p>
+
+                {changeSuccess && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-start gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>{changeSuccess}</div>
+                  </div>
+                )}
+
+                {changeError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-lg flex items-start gap-2">
+                    <KeyRound className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div>{changeError}</div>
+                  </div>
+                )}
+
+                <form onSubmit={handleChangePassword} className="space-y-3 max-w-md">
+                  <div>
+                    <label className="block text-xs font-semibold text-kms-slate-700 mb-1">
+                      Current Password
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="••••••••••••"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-kms-slate-700 mb-1">
+                      New Password (min 8 characters)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="••••••••••••"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-kms-slate-700 mb-1">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="••••••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white text-slate-900"
+                    />
+                  </div>
+
+                  <div className="pt-2">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      className="bg-blue-700 hover:bg-blue-800 text-white font-bold"
+                      disabled={isChangingPassword}
+                    >
+                      {isChangingPassword ? 'Updating Password...' : 'Update Password'}
+                    </Button>
+                  </div>
+                </form>
               </div>
             </Card>
 

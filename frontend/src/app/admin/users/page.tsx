@@ -7,6 +7,7 @@ import { Button } from '@/src/components/ui/Button';
 import { Badge } from '@/src/components/ui/Badge';
 import { Table } from '@/src/components/ui/Table';
 import { Modal } from '@/src/components/ui/Modal';
+import { kmsApi } from '@/src/lib/api';
 import {
   Users,
   Plus,
@@ -65,29 +66,20 @@ export default function AdminUsersPage() {
   const [formRole, setFormRole] = useState('ROLE_VIEWER');
   const [formTempPassword, setFormTempPassword] = useState('');
   const [formResetPassword, setFormResetPassword] = useState('');
-  const [formResetTemporary, setFormResetTemporary] = useState(true);
+  const [formResetTemporary, setFormResetTemporary] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
 
   const fetchUsers = async (query = '') => {
     setIsLoading(true);
     try {
-      const endpoint = query
-        ? `${API_BASE}/admin/users/search?q=${encodeURIComponent(query)}`
-        : `${API_BASE}/admin/users`;
-      const res = await fetch(endpoint, {
-        headers: {
-          Authorization: `Bearer ${sessionStorage.getItem('kms_access_token') || ''}`,
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data);
-      }
-    } catch (err) {
+      const data = query
+        ? await kmsApi.admin.searchUsers(query)
+        : await kmsApi.admin.getUsers();
+      setUsers(data);
+    } catch (err: unknown) {
       console.error('[AdminUsersPage] Error fetching users:', err);
-      showNotification('error', 'Failed to load user directory');
+      const msg = err instanceof Error ? err.message : 'Failed to load user directory';
+      showNotification('error', msg.replace(/^API Error \[\d+\]:\s*/, ''));
     } finally {
       setIsLoading(false);
     }
@@ -117,34 +109,23 @@ export default function AdminUsersPage() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/users`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionStorage.getItem('kms_access_token') || ''}`,
-        },
-        body: JSON.stringify({
-          username: formUsername,
-          email: formEmail,
-          roleName: formRole,
-          temporaryPassword: formTempPassword || undefined,
-        }),
+      await kmsApi.admin.createUser({
+        username: formUsername,
+        email: formEmail,
+        roleName: formRole,
+        temporaryPassword: formTempPassword || undefined,
       });
 
-      if (res.ok) {
-        showNotification('success', `User '${formUsername}' created in Keycloak and KMS`);
-        setIsCreateOpen(false);
-        setFormUsername('');
-        setFormEmail('');
-        setFormRole('ROLE_VIEWER');
-        setFormTempPassword('');
-        fetchUsers();
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        showNotification('error', errData.message || 'Failed to create user');
-      }
-    } catch (err) {
-      showNotification('error', 'Network error while creating user');
+      showNotification('success', `User '${formUsername}' created in Keycloak and KMS`);
+      setIsCreateOpen(false);
+      setFormUsername('');
+      setFormEmail('');
+      setFormRole('ROLE_VIEWER');
+      setFormTempPassword('');
+      fetchUsers();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to create user';
+      showNotification('error', msg.replace(/^API Error \[\d+\]:\s*/, ''));
     } finally {
       setIsSubmitting(false);
     }
@@ -157,28 +138,18 @@ export default function AdminUsersPage() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/users/${selectedUser.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionStorage.getItem('kms_access_token') || ''}`,
-        },
-        body: JSON.stringify({
-          username: formUsername,
-          email: formEmail,
-          roleName: formRole,
-        }),
+      await kmsApi.admin.updateUser(selectedUser.id, {
+        username: formUsername,
+        email: formEmail,
+        roleName: formRole,
       });
 
-      if (res.ok) {
-        showNotification('success', `User '${formUsername}' updated successfully`);
-        setIsEditOpen(false);
-        fetchUsers();
-      } else {
-        showNotification('error', 'Failed to update user');
-      }
-    } catch (err) {
-      showNotification('error', 'Network error while updating user');
+      showNotification('success', `User '${formUsername}' updated successfully`);
+      setIsEditOpen(false);
+      fetchUsers();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update user';
+      showNotification('error', msg.replace(/^API Error \[\d+\]:\s*/, ''));
     } finally {
       setIsSubmitting(false);
     }
@@ -188,21 +159,16 @@ export default function AdminUsersPage() {
   const toggleUserStatus = async (user: UserItem) => {
     const action = user.isActive ? 'deactivate' : 'activate';
     try {
-      const res = await fetch(`${API_BASE}/admin/users/${user.id}/${action}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${sessionStorage.getItem('kms_access_token') || ''}`,
-        },
-      });
-
-      if (res.ok) {
-        showNotification('success', `User '${user.username}' ${action}d successfully`);
-        fetchUsers();
+      if (user.isActive) {
+        await kmsApi.admin.deactivateUser(user.id);
       } else {
-        showNotification('error', `Failed to ${action} user`);
+        await kmsApi.admin.activateUser(user.id);
       }
-    } catch (err) {
-      showNotification('error', `Network error during ${action}`);
+      showNotification('success', `User '${user.username}' ${action}d successfully`);
+      fetchUsers();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : `Failed to ${action} user`;
+      showNotification('error', msg.replace(/^API Error \[\d+\]:\s*/, ''));
     }
   };
 
@@ -212,22 +178,13 @@ export default function AdminUsersPage() {
 
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/users/${selectedUser.id}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${sessionStorage.getItem('kms_access_token') || ''}`,
-        },
-      });
-
-      if (res.ok) {
-        showNotification('success', `User '${selectedUser.username}' deleted/decoupled successfully`);
-        setIsDeleteOpen(false);
-        fetchUsers();
-      } else {
-        showNotification('error', 'Failed to delete user');
-      }
-    } catch (err) {
-      showNotification('error', 'Network error while deleting user');
+      await kmsApi.admin.deleteUser(selectedUser.id);
+      showNotification('success', `User '${selectedUser.username}' deleted/decoupled successfully`);
+      setIsDeleteOpen(false);
+      fetchUsers();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete user';
+      showNotification('error', msg.replace(/^API Error \[\d+\]:\s*/, ''));
     } finally {
       setIsSubmitting(false);
     }
@@ -254,7 +211,7 @@ export default function AdminUsersPage() {
   const openResetPasswordModal = (user: UserItem) => {
     setSelectedUser(user);
     setFormResetPassword('');
-    setFormResetTemporary(true);
+    setFormResetTemporary(false);
     setIsResetPasswordOpen(true);
   };
 
@@ -263,31 +220,24 @@ export default function AdminUsersPage() {
     e.preventDefault();
     if (!selectedUser || !formResetPassword) return;
 
+    if (formResetPassword.length < 8) {
+      showNotification('error', 'New password must be at least 8 characters long.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/users/${selectedUser.id}/reset-password`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${sessionStorage.getItem('kms_access_token') || ''}`,
-        },
-        body: JSON.stringify({
-          password: formResetPassword,
-          temporary: String(formResetTemporary),
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        showNotification('success', data.message || `Password reset for '${selectedUser.username}'`);
-        setIsResetPasswordOpen(false);
-        setFormResetPassword('');
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        showNotification('error', errData.message || 'Failed to reset password');
-      }
-    } catch (err) {
-      showNotification('error', 'Network error while resetting password');
+      const res = await kmsApi.admin.resetUserPassword(
+        selectedUser.id,
+        formResetPassword,
+        formResetTemporary
+      );
+      showNotification('success', res.message || `Password reset for '${selectedUser.username}'`);
+      setIsResetPasswordOpen(false);
+      setFormResetPassword('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to reset password';
+      showNotification('error', msg.replace(/^API Error \[\d+\]:\s*/, ''));
     } finally {
       setIsSubmitting(false);
     }
@@ -691,6 +641,7 @@ export default function AdminUsersPage() {
             <input
               type="text"
               required
+              minLength={8}
               placeholder="min. 8 characters"
               value={formResetPassword}
               onChange={(e) => setFormResetPassword(e.target.value)}

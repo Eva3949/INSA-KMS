@@ -13,6 +13,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.enterprise.kms.service.KeycloakAdminService;
+
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -24,6 +26,7 @@ class UserManagementIntegrationTest {
     private UserRepository userRepository;
     private DocumentRepository documentRepository;
     private DepartmentRepository departmentRepository;
+    private KeycloakAdminService keycloakAdminService;
     private AdminController adminController;
 
     @BeforeEach
@@ -31,7 +34,8 @@ class UserManagementIntegrationTest {
         userRepository = Mockito.mock(UserRepository.class);
         documentRepository = Mockito.mock(DocumentRepository.class);
         departmentRepository = Mockito.mock(DepartmentRepository.class);
-        adminController = new AdminController(userRepository, documentRepository, departmentRepository, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        keycloakAdminService = Mockito.mock(KeycloakAdminService.class);
+        adminController = new AdminController(userRepository, documentRepository, departmentRepository, null, null, null, null, null, null, keycloakAdminService, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Test

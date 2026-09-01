@@ -166,7 +166,7 @@ public class AdminController {
         // database cannot authenticate, and its role would carry no authority.
         String keycloakSub = keycloakAdminService.createUser(
                 username, email, body.get("firstName"), body.get("lastName"),
-                temporaryPassword, roleName, true);
+                temporaryPassword, roleName, false);
         if (keycloakSub == null) {
             keycloakSub = body.getOrDefault("keycloakSub", "sub-" + UUID.randomUUID());
         }
@@ -270,9 +270,9 @@ public class AdminController {
         if (password == null || password.length() < 8) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "password must be at least 8 characters");
         }
-        boolean temporary = !"false".equalsIgnoreCase(body.getOrDefault("temporary", "true"));
-        keycloakAdminService.resetPassword(
-                keycloakAdminService.resolveUserId(u.getKeycloakSub(), u.getUsername()), password, temporary);
+        String keycloakUserId = keycloakAdminService.resolveUserId(u.getKeycloakSub(), u.getUsername());
+        keycloakAdminService.resetPassword(keycloakUserId, password, false);
+        keycloakAdminService.addRequiredAction(keycloakUserId, "UPDATE_PASSWORD");
         return ResponseEntity.ok(Map.of("message", "Password reset in Keycloak", "username", u.getUsername()));
     }
 
