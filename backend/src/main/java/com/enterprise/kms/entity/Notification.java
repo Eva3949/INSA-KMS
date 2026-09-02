@@ -30,6 +30,18 @@ public class Notification {
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
+    @Column(name = "event_type", length = 100)
+    private String eventType;
+
+    @Column(name = "target_type", length = 50)
+    private String targetType;
+
+    @Column(name = "target_id")
+    private UUID targetId;
+
+    @Column(name = "action_url", length = 500)
+    private String actionUrl;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -50,4 +62,17 @@ public class Notification {
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(OffsetDateTime createdAt) { this.createdAt = createdAt; }
+
+    public String getEventType() { return eventType; }
+    public void setEventType(String eventType) { this.eventType = eventType; }
+
+    public String getTargetType() { return targetType; }
+    public void setTargetType(String targetType) { this.targetType = targetType; }
+
+    public UUID getTargetId() { return targetId; }
+    public void setTargetId(UUID targetId) { this.targetId = targetId; }
+
+    public String getActionUrl() { return actionUrl; }
+    public void setActionUrl(String actionUrl) { this.actionUrl = actionUrl; }
 }
+

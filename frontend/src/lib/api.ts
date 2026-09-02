@@ -553,4 +553,36 @@ export const kmsApi = {
       fetchApi<any>(`/hr/employees/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
     getEmployeeKnowledge: (id: string) => fetchApi<any>(`/hr/employees/${id}/knowledge`),
   },
+
+  // Notifications
+  notifications: {
+    list: (params?: { unreadOnly?: boolean; page?: number; size?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.unreadOnly !== undefined) q.set('unreadOnly', String(params.unreadOnly));
+      if (params?.page !== undefined) q.set('page', String(params.page));
+      if (params?.size !== undefined) q.set('size', String(params.size));
+      return fetchApi<{
+        content: Array<{
+          id: string;
+          title: string;
+          message: string;
+          isRead: boolean;
+          readAt?: string;
+          createdAt: string;
+          eventType?: string;
+          targetType?: string;
+          targetId?: string;
+          actionUrl?: string;
+        }>;
+        totalElements: number;
+        totalPages: number;
+      }>(`/notifications?${q.toString()}`);
+    },
+    getUnreadCount: () =>
+      fetchApi<{ unreadCount: number }>('/notifications/unread-count').then(
+        (data: any) => ({ unreadCount: typeof data === 'number' ? data : (data?.unreadCount ?? data?.count ?? 0) })
+      ),
+    markRead: (id: string) => fetchApi<void>(`/notifications/${id}/read`, { method: 'PUT' }),
+    markAllRead: () => fetchApi<void>('/notifications/read-all', { method: 'PUT' }),
+  },
 };

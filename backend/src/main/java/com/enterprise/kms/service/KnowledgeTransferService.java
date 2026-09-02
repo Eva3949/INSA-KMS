@@ -135,14 +135,19 @@ public class KnowledgeTransferService {
 
         // Notifications
         String notifMsg = "Knowledge Transfer case '" + savedCase.getTitle() + "' has been initiated.";
-        notificationService.sendNotificationToUser(employee, "Knowledge Transfer Case Initiated", notifMsg);
+        String actionUrl = "/knowledge-transfer/" + savedCase.getId();
+        notificationService.sendNotificationToUser(employee, "Knowledge Transfer Case Initiated", notifMsg,
+                NotificationEventType.KT_CASE_CREATED, "KNOWLEDGE_TRANSFER", savedCase.getId(), actionUrl);
         if (manager != null) {
-            notificationService.sendNotificationToUser(manager, "Knowledge Transfer Assigned", notifMsg);
+            notificationService.sendNotificationToUser(manager, "Knowledge Transfer Assigned", notifMsg,
+                    NotificationEventType.KT_CASE_CREATED, "KNOWLEDGE_TRANSFER", savedCase.getId(), actionUrl);
         }
         if (hrRep != null) {
-            notificationService.sendNotificationToUser(hrRep, "Knowledge Transfer Assigned", notifMsg);
+            notificationService.sendNotificationToUser(hrRep, "Knowledge Transfer Assigned", notifMsg,
+                    NotificationEventType.KT_CASE_CREATED, "KNOWLEDGE_TRANSFER", savedCase.getId(), actionUrl);
         } else {
-            notificationService.sendNotificationToRole("ROLE_ADMIN", "New Knowledge Transfer Case", notifMsg);
+            notificationService.sendNotificationToRole("ROLE_ADMIN", "New Knowledge Transfer Case", notifMsg,
+                    NotificationEventType.KT_CASE_CREATED, "KNOWLEDGE_TRANSFER", savedCase.getId(), actionUrl);
         }
 
         // Audit log
@@ -274,6 +279,18 @@ public class KnowledgeTransferService {
         ktCase.setUpdatedAt(OffsetDateTime.now());
         KnowledgeTransferCase saved = caseRepository.save(ktCase);
 
+        String updateUrl = "/knowledge-transfer/" + saved.getId();
+        if (saved.getEmployee() != null) {
+            notificationService.sendNotificationToUser(saved.getEmployee(), "Knowledge Transfer Updated",
+                    "Knowledge Transfer case '" + saved.getTitle() + "' was updated (Status: " + saved.getStatus() + ").",
+                    NotificationEventType.KT_CASE_UPDATED, "KNOWLEDGE_TRANSFER", saved.getId(), updateUrl);
+        }
+        if (saved.getSuccessor() != null) {
+            notificationService.sendNotificationToUser(saved.getSuccessor(), "Knowledge Transfer Updated",
+                    "Knowledge Transfer case '" + saved.getTitle() + "' was updated (Status: " + saved.getStatus() + ").",
+                    NotificationEventType.KT_CASE_UPDATED, "KNOWLEDGE_TRANSFER", saved.getId(), updateUrl);
+        }
+
         auditService.recordAuditLog(
                 username, null, "KT_CASE_UPDATED", "KNOWLEDGE_TRANSFER",
                 caseId.toString(), null, "Updated case: " + saved.getTitle()
@@ -296,7 +313,9 @@ public class KnowledgeTransferService {
 
         notificationService.sendNotificationToUser(
                 successor, "Knowledge Transfer Successor Assignment",
-                "You have been assigned as Successor for Knowledge Transfer: " + ktCase.getTitle()
+                "You have been assigned as Successor for Knowledge Transfer: " + ktCase.getTitle(),
+                NotificationEventType.KT_SUCCESSOR_ASSIGNED, "KNOWLEDGE_TRANSFER", saved.getId(),
+                "/knowledge-transfer/" + saved.getId()
         );
 
         auditService.recordAuditLog(
@@ -355,6 +374,18 @@ public class KnowledgeTransferService {
         plan.setUpdatedAt(OffsetDateTime.now());
         KnowledgeTransferPlan saved = planRepository.save(plan);
 
+        String planUrl = "/knowledge-transfer/" + caseId;
+        if (ktCase.getSuccessor() != null) {
+            notificationService.sendNotificationToUser(ktCase.getSuccessor(), "Knowledge Transfer Plan Updated",
+                    "The knowledge transfer plan for '" + ktCase.getTitle() + "' was updated.",
+                    NotificationEventType.KT_PLAN_UPDATED, "KNOWLEDGE_TRANSFER", caseId, planUrl);
+        }
+        if (ktCase.getEmployee() != null && !ktCase.getEmployee().getUsername().equals(username)) {
+            notificationService.sendNotificationToUser(ktCase.getEmployee(), "Knowledge Transfer Plan Updated",
+                    "The knowledge transfer plan for '" + ktCase.getTitle() + "' was updated by " + username + ".",
+                    NotificationEventType.KT_PLAN_UPDATED, "KNOWLEDGE_TRANSFER", caseId, planUrl);
+        }
+
         auditService.recordAuditLog(
                 username, null, "KT_PLAN_UPDATED", "KNOWLEDGE_TRANSFER",
                 caseId.toString(), null, "Updated transfer plan for case: " + ktCase.getTitle()
@@ -398,6 +429,13 @@ public class KnowledgeTransferService {
 
         KnowledgeTransferChecklist saved = checklistRepository.save(cl);
 
+        if (saved.getAssignedTo() != null) {
+            notificationService.sendNotificationToUser(saved.getAssignedTo(), "Checklist Item Assigned",
+                    "You were assigned checklist item '" + saved.getItemName() + "' in KT case '" + ktCase.getTitle() + "'.",
+                    NotificationEventType.KT_CHECKLIST_ASSIGNED, "KNOWLEDGE_TRANSFER", ktCase.getId(),
+                    "/knowledge-transfer/" + ktCase.getId());
+        }
+
         auditService.recordAuditLog(
                 username, null, "KT_CHECKLIST_ITEM_ADDED", "KNOWLEDGE_TRANSFER",
                 caseId.toString(), null, "Added checklist item: " + saved.getItemName()
@@ -436,6 +474,13 @@ public class KnowledgeTransferService {
 
         cl.setUpdatedAt(OffsetDateTime.now());
         KnowledgeTransferChecklist saved = checklistRepository.save(cl);
+
+        if (saved.getAssignedTo() != null) {
+            notificationService.sendNotificationToUser(saved.getAssignedTo(), "Checklist Item Updated",
+                    "Checklist item '" + saved.getItemName() + "' is now " + saved.getStatus() + " in KT case '" + cl.getTransferCase().getTitle() + "'.",
+                    NotificationEventType.KT_CHECKLIST_UPDATED, "KNOWLEDGE_TRANSFER", cl.getTransferCase().getId(),
+                    "/knowledge-transfer/" + cl.getTransferCase().getId());
+        }
 
         auditService.recordAuditLog(
                 username, null, "KT_CHECKLIST_UPDATED", "KNOWLEDGE_TRANSFER",
@@ -480,11 +525,23 @@ public class KnowledgeTransferService {
 
         KnowledgeTransferSubmission saved = submissionRepository.save(sub);
 
-        // Notify manager / HR
+        // Notify manager / HR with fallback to avoid silent omission
+        String subUrl = "/knowledge-transfer/" + caseId;
+        String subMsg = "New knowledge item '" + saved.getTitle() + "' submitted by " + author.getUsername();
         if (ktCase.getManager() != null) {
             notificationService.sendNotificationToUser(
-                    ktCase.getManager(), "Knowledge Submitted for Review",
-                    "New knowledge item '" + saved.getTitle() + "' submitted by " + author.getUsername()
+                    ktCase.getManager(), "Knowledge Submitted for Review", subMsg,
+                    NotificationEventType.KT_KNOWLEDGE_SUBMITTED, "KNOWLEDGE_TRANSFER", caseId, subUrl
+            );
+        } else if (ktCase.getHrRep() != null) {
+            notificationService.sendNotificationToUser(
+                    ktCase.getHrRep(), "Knowledge Submitted for Review", subMsg,
+                    NotificationEventType.KT_KNOWLEDGE_SUBMITTED, "KNOWLEDGE_TRANSFER", caseId, subUrl
+            );
+        } else {
+            notificationService.sendNotificationToRole(
+                    "ROLE_ADMIN", "Knowledge Submitted for Review", subMsg,
+                    NotificationEventType.KT_KNOWLEDGE_SUBMITTED, "KNOWLEDGE_TRANSFER", caseId, subUrl
             );
         }
 
@@ -526,9 +583,13 @@ public class KnowledgeTransferService {
         KnowledgeTransferSubmission saved = submissionRepository.save(sub);
 
         // Notify submitter
+        String evType = "APPROVED".equalsIgnoreCase(saved.getValidationStatus())
+                ? NotificationEventType.KT_APPROVED : NotificationEventType.KT_CHANGES_REQUESTED;
         notificationService.sendNotificationToUser(
                 sub.getSubmittedBy(), "Knowledge Submission " + saved.getValidationStatus(),
-                "Your knowledge submission '" + saved.getTitle() + "' was reviewed: " + saved.getValidationStatus() + (comments != null ? " - " + comments : "")
+                "Your knowledge submission '" + saved.getTitle() + "' was reviewed: " + saved.getValidationStatus() + (comments != null && !comments.isBlank() ? " - " + comments : ""),
+                evType, "KNOWLEDGE_TRANSFER", sub.getTransferCase().getId(),
+                "/knowledge-transfer/" + sub.getTransferCase().getId()
         );
 
         auditService.recordAuditLog(
@@ -573,6 +634,7 @@ public class KnowledgeTransferService {
         KnowledgeTransferSession saved = sessionRepository.save(session);
 
         // Attendees
+        String sessionUrl = "/knowledge-transfer/" + caseId;
         @SuppressWarnings("unchecked")
         List<String> attendeeIds = (List<String>) payload.get("attendeeIds");
         if (attendeeIds != null) {
@@ -586,7 +648,8 @@ public class KnowledgeTransferService {
                         sessionAttendeeRepository.save(att);
                         notificationService.sendNotificationToUser(
                                 u, "Knowledge Transfer Session Scheduled",
-                                "You are invited to '" + saved.getTitle() + "' at " + saved.getScheduledAt()
+                                "You are invited to '" + saved.getTitle() + "' at " + saved.getScheduledAt(),
+                                NotificationEventType.KT_SESSION_SCHEDULED, "KNOWLEDGE_TRANSFER", caseId, sessionUrl
                         );
                     });
                 }
@@ -735,15 +798,20 @@ public class KnowledgeTransferService {
 
         // Notifications
         String notif = "Knowledge Transfer case '" + saved.getTitle() + "' has been successfully completed and cleared.";
-        notificationService.sendNotificationToUser(saved.getEmployee(), "Knowledge Transfer Completed & Cleared", notif);
+        String completeUrl = "/knowledge-transfer/" + caseId;
+        notificationService.sendNotificationToUser(saved.getEmployee(), "Knowledge Transfer Completed & Cleared", notif,
+                NotificationEventType.KT_FINAL_CLEARANCE, "KNOWLEDGE_TRANSFER", caseId, completeUrl);
         if (saved.getManager() != null) {
-            notificationService.sendNotificationToUser(saved.getManager(), "Knowledge Transfer Completed", notif);
+            notificationService.sendNotificationToUser(saved.getManager(), "Knowledge Transfer Completed", notif,
+                    NotificationEventType.KT_FINAL_CLEARANCE, "KNOWLEDGE_TRANSFER", caseId, completeUrl);
         }
         if (saved.getHrRep() != null) {
-            notificationService.sendNotificationToUser(saved.getHrRep(), "Knowledge Transfer Completed", notif);
+            notificationService.sendNotificationToUser(saved.getHrRep(), "Knowledge Transfer Completed", notif,
+                    NotificationEventType.KT_FINAL_CLEARANCE, "KNOWLEDGE_TRANSFER", caseId, completeUrl);
         }
         if (saved.getSuccessor() != null) {
-            notificationService.sendNotificationToUser(saved.getSuccessor(), "Knowledge Transfer Completed", notif);
+            notificationService.sendNotificationToUser(saved.getSuccessor(), "Knowledge Transfer Completed", notif,
+                    NotificationEventType.KT_FINAL_CLEARANCE, "KNOWLEDGE_TRANSFER", caseId, completeUrl);
         }
 
         auditService.recordAuditLog(

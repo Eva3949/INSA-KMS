@@ -2,6 +2,7 @@ package com.enterprise.kms.service;
 
 import com.enterprise.kms.entity.Department;
 import com.enterprise.kms.entity.KnowledgeTransferCase;
+import com.enterprise.kms.entity.NotificationEventType;
 import com.enterprise.kms.entity.User;
 import com.enterprise.kms.repository.DepartmentRepository;
 import com.enterprise.kms.repository.KnowledgeTransferCaseRepository;
@@ -90,6 +91,10 @@ public class HrEmployeeService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found"));
 
+        Department oldDept = user.getDepartment();
+        User oldManager = user.getManager();
+        String oldStatus = user.getEmploymentStatus();
+
         if (payload.containsKey("fullName")) {
             user.setFullName((String) payload.get("fullName"));
         }
@@ -133,6 +138,41 @@ public class HrEmployeeService {
         }
 
         User saved = userRepository.save(user);
+
+        // Notifications for HR changes
+        String hrUrl = "/hr/employees/" + saved.getId();
+        boolean deptChanged = (oldDept == null && saved.getDepartment() != null)
+                || (oldDept != null && (saved.getDepartment() == null || !oldDept.getId().equals(saved.getDepartment().getId())));
+        boolean mgrChanged = (oldManager == null && saved.getManager() != null)
+                || (oldManager != null && (saved.getManager() == null || !oldManager.getId().equals(saved.getManager().getId())));
+        boolean statusChanged = (oldStatus == null && saved.getEmploymentStatus() != null)
+                || (oldStatus != null && !oldStatus.equalsIgnoreCase(saved.getEmploymentStatus()));
+
+        if (deptChanged) {
+            notificationService.sendNotificationToUser(saved, "Department Changed",
+                    "Your department was updated to " + (saved.getDepartment() != null ? saved.getDepartment().getName() : "Unassigned") + ".",
+                    NotificationEventType.HR_DEPARTMENT_CHANGED, "HR_EMPLOYEE", saved.getId(), hrUrl);
+        }
+        if (mgrChanged) {
+            notificationService.sendNotificationToUser(saved, "Manager Changed",
+                    "Your manager was updated to " + (saved.getManager() != null ? saved.getManager().getFullName() : "None") + ".",
+                    NotificationEventType.HR_MANAGER_CHANGED, "HR_EMPLOYEE", saved.getId(), hrUrl);
+            if (saved.getManager() != null && !saved.getManager().getId().equals(saved.getId())) {
+                notificationService.sendNotificationToUser(saved.getManager(), "New Direct Report Assigned",
+                        "Employee " + saved.getFullName() + " has been assigned to you as a direct report.",
+                        NotificationEventType.HR_MANAGER_CHANGED, "HR_EMPLOYEE", saved.getId(), hrUrl);
+            }
+        }
+        if (statusChanged) {
+            notificationService.sendNotificationToUser(saved, "Employment Status Changed",
+                    "Your employment status is now " + saved.getEmploymentStatus() + ".",
+                    NotificationEventType.HR_STATUS_CHANGED, "HR_EMPLOYEE", saved.getId(), hrUrl);
+        }
+        if (!deptChanged && !mgrChanged && !statusChanged && !saved.getUsername().equals(updaterUsername)) {
+            notificationService.sendNotificationToUser(saved, "Employee Profile Updated",
+                    "Your employee profile was updated by " + updaterUsername + ".",
+                    NotificationEventType.HR_PROFILE_UPDATED, "HR_EMPLOYEE", saved.getId(), hrUrl);
+        }
 
         auditService.recordAuditLog(
                 updaterUsername, null, "HR_EMPLOYEE_UPDATED", "USER",

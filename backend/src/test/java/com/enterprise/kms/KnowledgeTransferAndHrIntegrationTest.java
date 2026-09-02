@@ -149,7 +149,7 @@ class KnowledgeTransferAndHrIntegrationTest {
         // Verify plan created
         verify(planRepository, times(1)).save(any(KnowledgeTransferPlan.class));
         // Verify notifications sent
-        verify(notificationService, atLeastOnce()).sendNotificationToUser(eq(employee), anyString(), anyString());
+        verify(notificationService, atLeastOnce()).sendNotificationToUser(eq(employee), anyString(), anyString(), anyString(), anyString(), any(UUID.class), anyString());
         // Verify audit logged
         verify(auditService, times(1)).recordAuditLog(eq("admin"), isNull(), eq("KT_CASE_CREATED"), eq("KNOWLEDGE_TRANSFER"), anyString(), isNull(), anyString());
     }
@@ -170,7 +170,7 @@ class KnowledgeTransferAndHrIntegrationTest {
 
         assertNotNull(resp);
         assertEquals(successor.getId(), c.getSuccessor().getId());
-        verify(notificationService, times(1)).sendNotificationToUser(eq(successor), contains("Successor"), anyString());
+        verify(notificationService, times(1)).sendNotificationToUser(eq(successor), contains("Successor"), anyString(), anyString(), anyString(), any(UUID.class), anyString());
         verify(auditService, times(1)).recordAuditLog(eq("admin"), isNull(), eq("KT_SUCCESSOR_ASSIGNED"), eq("KNOWLEDGE_TRANSFER"), eq(caseId.toString()), isNull(), anyString());
     }
 
@@ -218,7 +218,7 @@ class KnowledgeTransferAndHrIntegrationTest {
         Map<String, Object> valResp = transferService.validateKnowledge(sub.getId(), valPayload, "sarah.mgr");
         assertEquals("APPROVED", valResp.get("validationStatus"));
         assertEquals("Looks comprehensive and accurate.", valResp.get("reviewComments"));
-        verify(notificationService, times(1)).sendNotificationToUser(eq(employee), contains("APPROVED"), anyString());
+        verify(notificationService, times(1)).sendNotificationToUser(eq(employee), contains("APPROVED"), anyString(), anyString(), anyString(), any(UUID.class), anyString());
         verify(auditService, times(1)).recordAuditLog(eq("sarah.mgr"), isNull(), eq("KT_KNOWLEDGE_VALIDATED"), anyString(), eq(caseId.toString()), isNull(), anyString());
     }
 

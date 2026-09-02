@@ -24,6 +24,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.enterprise.kms.entity.NotificationEventType;
+import com.enterprise.kms.service.NotificationService;
 import java.util.Map;
 import java.util.UUID;
 
@@ -44,6 +46,7 @@ public class DocumentController {
     private final com.enterprise.kms.service.StorageService storageService;
     private final com.enterprise.kms.repository.StorageObjectRepository storageObjectRepository;
     private final com.enterprise.kms.service.SearchService searchService;
+    private final NotificationService notificationService;
 
     public DocumentController(DocumentService documentService, PermissionService permissionService,
                               com.enterprise.kms.service.SystemSettingService systemSettingService,
@@ -57,7 +60,8 @@ public class DocumentController {
                               DocumentRepository documentRepository,
                               com.enterprise.kms.service.StorageService storageService,
                               com.enterprise.kms.repository.StorageObjectRepository storageObjectRepository,
-                              com.enterprise.kms.service.SearchService searchService) {
+                              com.enterprise.kms.service.SearchService searchService,
+                              NotificationService notificationService) {
         this.documentService = documentService;
         this.permissionService = permissionService;
         this.systemSettingService = systemSettingService;
@@ -72,6 +76,26 @@ public class DocumentController {
         this.storageService = storageService;
         this.storageObjectRepository = storageObjectRepository;
         this.searchService = searchService;
+        this.notificationService = notificationService;
+    }
+
+    public DocumentController(DocumentService documentService, PermissionService permissionService,
+                              com.enterprise.kms.service.SystemSettingService systemSettingService,
+                              ShareLinkService shareLinkService,
+                              DocumentCommentRepository documentCommentRepository,
+                              DocumentLockRepository documentLockRepository,
+                              UserRepository userRepository,
+                              DocumentFavoriteRepository documentFavoriteRepository,
+                              DocumentShareRepository documentShareRepository,
+                              SubscriptionRepository subscriptionRepository,
+                              DocumentRepository documentRepository,
+                              com.enterprise.kms.service.StorageService storageService,
+                              com.enterprise.kms.repository.StorageObjectRepository storageObjectRepository,
+                              com.enterprise.kms.service.SearchService searchService) {
+        this(documentService, permissionService, systemSettingService, shareLinkService,
+             documentCommentRepository, documentLockRepository, userRepository,
+             documentFavoriteRepository, documentShareRepository, subscriptionRepository,
+             documentRepository, storageService, storageObjectRepository, searchService, null);
     }
 
     @GetMapping("/{id}/metadata")
@@ -154,6 +178,11 @@ public class DocumentController {
                                                   @RequestParam(value = "confidentialityLevel", defaultValue = "INTERNAL") String confidentialityLevel) {
         String username = SecurityUtils.getCurrentUsername();
         Document doc = documentService.createDocument(file, title, departmentCode, documentTypeName, confidentialityLevel, username);
+        if (notificationService != null) {
+            notificationService.sendNotification(username, "Document Uploaded",
+                    "Document '" + doc.getTitle() + "' was uploaded successfully.",
+                    NotificationEventType.DOCUMENT_UPLOADED, "DOCUMENT", doc.getId(), "/preview/" + doc.getId());
+        }
         return ResponseEntity.ok(documentService.toResponse(doc));
     }
 
@@ -163,6 +192,11 @@ public class DocumentController {
     public ResponseEntity<java.util.Map<String, Object>> createArticle(@RequestBody java.util.Map<String, Object> body) {
         String username = SecurityUtils.getCurrentUsername();
         Document doc = documentService.createArticle(body, username);
+        if (notificationService != null) {
+            notificationService.sendNotification(username, "Knowledge Article Created",
+                    "Article '" + doc.getTitle() + "' was created successfully.",
+                    NotificationEventType.DOCUMENT_UPLOADED, "DOCUMENT", doc.getId(), "/preview/" + doc.getId());
+        }
         return ResponseEntity.ok(documentService.toResponse(doc));
     }
 
@@ -225,7 +259,14 @@ public class DocumentController {
     @AuditLog(action = "DOCUMENT_DELETE", resourceType = "DOCUMENT")
     public ResponseEntity<Void> deleteDocument(@PathVariable UUID id) {
         permissionService.requireDocumentAccess(id, PermissionService.DELETE);
+        Document doc = documentService.getDocumentById(id);
+        String username = SecurityUtils.getCurrentUsername();
         documentService.softDeleteDocument(id);
+        if (notificationService != null && doc != null && doc.getAuthor() != null && !doc.getAuthor().getUsername().equals(username)) {
+            notificationService.sendNotificationToUser(doc.getAuthor(), "Document Moved to Recycle Bin",
+                    "Your document '" + doc.getTitle() + "' was moved to the recycle bin by " + username + ".",
+                    NotificationEventType.DOCUMENT_DELETED, "DOCUMENT", doc.getId(), "/recycle-bin");
+        }
         return ResponseEntity.noContent().build();
     }
 
@@ -341,13 +382,36 @@ public class DocumentController {
         comment.setUser(author);
 
         String parentId = payload.get("parentCommentId");
+        com.enterprise.kms.entity.DocumentComment parent = null;
         if (parentId != null && !parentId.isBlank()) {
             UUID parentUuid = UUID.fromString(parentId);
-            com.enterprise.kms.entity.DocumentComment parent = documentCommentRepository.findById(parentUuid)
-                    .orElse(null);
+            parent = documentCommentRepository.findById(parentUuid).orElse(null);
             comment.setParentComment(parent);
         }
         comment = documentCommentRepository.save(comment);
+
+        // Notifications
+        if (notificationService != null) {
+            String docUrl = "/preview/" + doc.getId();
+            // Notify doc author if not commenter
+            if (doc.getAuthor() != null && !doc.getAuthor().getId().equals(author.getId())) {
+                notificationService.sendNotificationToUser(doc.getAuthor(), "New Comment on Document",
+                        username + " commented on '" + doc.getTitle() + "'.",
+                        NotificationEventType.DOCUMENT_COMMENT_ADDED, "DOCUMENT", doc.getId(), docUrl);
+            }
+            // Notify parent comment author if reply and not commenter
+            if (parent != null && parent.getUser() != null && !parent.getUser().getId().equals(author.getId())) {
+                notificationService.sendNotificationToUser(parent.getUser(), "Reply to Your Comment",
+                        username + " replied to your comment on '" + doc.getTitle() + "'.",
+                        NotificationEventType.DOCUMENT_COMMENT_ADDED, "DOCUMENT", doc.getId(), docUrl);
+            }
+            // Notify document subscribers
+            notificationService.notifySubscribers("DOCUMENT", doc.getId(),
+                    NotificationEventType.DOCUMENT_COMMENT_ADDED,
+                    "New Comment: " + doc.getTitle(),
+                    username + " commented on '" + doc.getTitle() + "'.",
+                    docUrl);
+        }
 
         java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("id", comment.getId());
@@ -373,7 +437,16 @@ public class DocumentController {
     public ResponseEntity<java.util.Map<String, Object>> checkoutDocument(@PathVariable UUID id) {
         permissionService.requireDocumentAccess(id, PermissionService.EDIT);
         String username = SecurityUtils.getCurrentUsername();
-        return ResponseEntity.ok(documentService.checkoutDocument(id, username));
+        java.util.Map<String, Object> res = documentService.checkoutDocument(id, username);
+        if (notificationService != null) {
+            Document doc = documentService.getDocumentById(id);
+            if (doc != null && doc.getAuthor() != null && !doc.getAuthor().getUsername().equals(username)) {
+                notificationService.sendNotificationToUser(doc.getAuthor(), "Document Checked Out",
+                        "Document '" + doc.getTitle() + "' was checked out for editing by " + username + ".",
+                        NotificationEventType.DOCUMENT_CHECKED_OUT, "DOCUMENT", doc.getId(), "/preview/" + doc.getId());
+            }
+        }
+        return ResponseEntity.ok(res);
     }
 
     /** FR-05: checkin — unlock a document and create a new version. */
@@ -387,6 +460,13 @@ public class DocumentController {
         permissionService.requireDocumentAccess(id, PermissionService.EDIT);
         String username = SecurityUtils.getCurrentUsername();
         Document doc = documentService.checkinDocument(id, file, changeSummary, username);
+        if (notificationService != null) {
+            notificationService.notifySubscribers("DOCUMENT", doc.getId(),
+                    NotificationEventType.DOCUMENT_VERSION_CREATED,
+                    "New Document Version: " + doc.getTitle(),
+                    "A new version of '" + doc.getTitle() + "' was checked in by " + username + ".",
+                    "/preview/" + doc.getId());
+        }
         return ResponseEntity.ok(documentService.toResponse(doc));
     }
 
@@ -429,11 +509,20 @@ public class DocumentController {
             @PathVariable UUID id,
             @RequestBody java.util.Map<String, Object> body) {
         permissionService.requireDocumentAccess(id, PermissionService.VIEW);
+        Document doc = documentService.getDocumentById(id);
         String username = SecurityUtils.getCurrentUsername();
         int expiryHours = body.containsKey("expiryHours")
                 ? Integer.parseInt(body.get("expiryHours").toString()) : 72;
         String password = body.get("password") != null ? body.get("password").toString() : null;
-        return ResponseEntity.ok(shareLinkService.createShareLink(id, username, expiryHours, password));
+        java.util.Map<String, Object> res = shareLinkService.createShareLink(id, username, expiryHours, password);
+        if (notificationService != null && doc != null) {
+            notificationService.notifySubscribers("DOCUMENT", id,
+                    NotificationEventType.DOCUMENT_SHARED,
+                    "Document Shared: " + doc.getTitle(),
+                    "A share link was created for '" + doc.getTitle() + "' by " + username + ".",
+                    "/preview/" + id);
+        }
+        return ResponseEntity.ok(res);
     }
 
     // ===== Favorites (user bookmarking) =====

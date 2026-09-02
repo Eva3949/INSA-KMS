@@ -60,6 +60,55 @@ public class AdminController {
     private final com.enterprise.kms.service.MicrosoftGraphService microsoftGraphService;
     private final com.enterprise.kms.service.ChatIntegrationService chatIntegrationService;
     private final com.enterprise.kms.service.AuditService auditService;
+    private final com.enterprise.kms.service.NotificationService notificationService;
+
+    public AdminController(UserRepository userRepository,
+                           DocumentRepository documentRepository,
+                           DepartmentRepository departmentRepository,
+                           StorageObjectRepository storageObjectRepository,
+                           AuditLogRepository auditLogRepository,
+                           AdminCatalogService adminCatalogService,
+                           SystemSettingService systemSettingService,
+                           ReportsService reportsService,
+                           RetentionDispositionJob retentionDispositionJob,
+                           KeycloakAdminService keycloakAdminService,
+                           ApprovalService approvalService,
+                           EmailService emailService,
+                           TextExtractionService textExtractionService,
+                           RecycleBinPurgeJob recycleBinPurgeJob,
+                           com.enterprise.kms.service.SiemForwardService siemForwardService,
+                           org.springframework.context.ApplicationContext applicationContext,
+                           com.enterprise.kms.service.HrisSyncService hrisSyncService,
+                           com.enterprise.kms.service.BackupService backupService,
+                           com.enterprise.kms.repository.ShareLinkRepository shareLinkRepository,
+                           com.enterprise.kms.service.MicrosoftGraphService microsoftGraphService,
+                           com.enterprise.kms.service.ChatIntegrationService chatIntegrationService,
+                           com.enterprise.kms.service.AuditService auditService,
+                           com.enterprise.kms.service.NotificationService notificationService) {
+        this.userRepository = userRepository;
+        this.documentRepository = documentRepository;
+        this.departmentRepository = departmentRepository;
+        this.storageObjectRepository = storageObjectRepository;
+        this.auditLogRepository = auditLogRepository;
+        this.adminCatalogService = adminCatalogService;
+        this.systemSettingService = systemSettingService;
+        this.reportsService = reportsService;
+        this.retentionDispositionJob = retentionDispositionJob;
+        this.keycloakAdminService = keycloakAdminService;
+        this.approvalService = approvalService;
+        this.emailService = emailService;
+        this.textExtractionService = textExtractionService;
+        this.recycleBinPurgeJob = recycleBinPurgeJob;
+        this.siemForwardService = siemForwardService;
+        this.applicationContext = applicationContext;
+        this.hrisSyncService = hrisSyncService;
+        this.backupService = backupService;
+        this.shareLinkRepository = shareLinkRepository;
+        this.microsoftGraphService = microsoftGraphService;
+        this.chatIntegrationService = chatIntegrationService;
+        this.auditService = auditService;
+        this.notificationService = notificationService;
+    }
 
     public AdminController(UserRepository userRepository,
                            DocumentRepository documentRepository,
@@ -83,28 +132,12 @@ public class AdminController {
                            com.enterprise.kms.service.MicrosoftGraphService microsoftGraphService,
                            com.enterprise.kms.service.ChatIntegrationService chatIntegrationService,
                            com.enterprise.kms.service.AuditService auditService) {
-        this.userRepository = userRepository;
-        this.documentRepository = documentRepository;
-        this.departmentRepository = departmentRepository;
-        this.storageObjectRepository = storageObjectRepository;
-        this.auditLogRepository = auditLogRepository;
-        this.adminCatalogService = adminCatalogService;
-        this.systemSettingService = systemSettingService;
-        this.reportsService = reportsService;
-        this.retentionDispositionJob = retentionDispositionJob;
-        this.keycloakAdminService = keycloakAdminService;
-        this.approvalService = approvalService;
-        this.emailService = emailService;
-        this.textExtractionService = textExtractionService;
-        this.recycleBinPurgeJob = recycleBinPurgeJob;
-        this.siemForwardService = siemForwardService;
-        this.applicationContext = applicationContext;
-        this.hrisSyncService = hrisSyncService;
-        this.backupService = backupService;
-        this.shareLinkRepository = shareLinkRepository;
-        this.microsoftGraphService = microsoftGraphService;
-        this.chatIntegrationService = chatIntegrationService;
-        this.auditService = auditService;
+        this(userRepository, documentRepository, departmentRepository, storageObjectRepository,
+             auditLogRepository, adminCatalogService, systemSettingService, reportsService,
+             retentionDispositionJob, keycloakAdminService, approvalService, emailService,
+             textExtractionService, recycleBinPurgeJob, siemForwardService, applicationContext,
+             hrisSyncService, backupService, shareLinkRepository, microsoftGraphService,
+             chatIntegrationService, auditService, null);
     }
 
     // ================= Dashboard Summary =================
@@ -226,7 +259,13 @@ public class AdminController {
         u.setIsActive(true);
         keycloakAdminService.setEnabled(
                 keycloakAdminService.resolveUserId(u.getKeycloakSub(), u.getUsername()), true);
-        return ResponseEntity.ok(userRepository.save(u));
+        User saved = userRepository.save(u);
+        if (notificationService != null) {
+            notificationService.sendNotificationToUser(saved, "Account Activated",
+                    "Your INSA KMS account has been activated.",
+                    com.enterprise.kms.entity.NotificationEventType.USER_ACTIVATED, "USER", saved.getId(), "/profile");
+        }
+        return ResponseEntity.ok(saved);
     }
 
     @PutMapping("/users/{id}/deactivate")
@@ -239,7 +278,13 @@ public class AdminController {
         // FR-27 offboarding: disabling in the IdP is what actually revokes access
         keycloakAdminService.setEnabled(
                 keycloakAdminService.resolveUserId(u.getKeycloakSub(), u.getUsername()), false);
-        return ResponseEntity.ok(userRepository.save(u));
+        User saved = userRepository.save(u);
+        if (notificationService != null) {
+            notificationService.sendNotificationToUser(saved, "Account Deactivated",
+                    "Your INSA KMS account has been deactivated.",
+                    com.enterprise.kms.entity.NotificationEventType.USER_DEACTIVATED, "USER", saved.getId(), "/profile");
+        }
+        return ResponseEntity.ok(saved);
     }
 
     @PutMapping("/users/{id}/roles")
@@ -256,7 +301,13 @@ public class AdminController {
         keycloakAdminService.assignRealmRoles(
                 keycloakAdminService.resolveUserId(u.getKeycloakSub(), u.getUsername()), newRole);
         u.setRoleName(newRole);
-        return ResponseEntity.ok(userRepository.save(u));
+        User saved = userRepository.save(u);
+        if (notificationService != null) {
+            notificationService.sendNotificationToUser(saved, "Role Updated",
+                    "Your system role has been changed to " + newRole + ".",
+                    com.enterprise.kms.entity.NotificationEventType.USER_ROLE_CHANGED, "USER", saved.getId(), "/profile");
+        }
+        return ResponseEntity.ok(saved);
     }
 
     @PutMapping("/users/{id}/reset-password")

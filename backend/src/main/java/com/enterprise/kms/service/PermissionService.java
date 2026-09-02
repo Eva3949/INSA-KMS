@@ -4,6 +4,7 @@ import com.enterprise.kms.entity.Document;
 import com.enterprise.kms.entity.DocumentPermission;
 import com.enterprise.kms.entity.Folder;
 import com.enterprise.kms.entity.FolderPermission;
+import com.enterprise.kms.entity.NotificationEventType;
 import com.enterprise.kms.entity.User;
 import com.enterprise.kms.repository.DocumentPermissionRepository;
 import com.enterprise.kms.repository.DocumentRepository;
@@ -55,6 +56,7 @@ public class PermissionService {
     private final DocumentPermissionRepository documentPermissionRepository;
     private final FolderPermissionRepository folderPermissionRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -63,12 +65,23 @@ public class PermissionService {
                              FolderRepository folderRepository,
                              DocumentPermissionRepository documentPermissionRepository,
                              FolderPermissionRepository folderPermissionRepository,
-                             UserRepository userRepository) {
+                             UserRepository userRepository,
+                             NotificationService notificationService) {
         this.documentRepository = documentRepository;
         this.folderRepository = folderRepository;
         this.documentPermissionRepository = documentPermissionRepository;
         this.folderPermissionRepository = folderPermissionRepository;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
+    }
+
+    public PermissionService(DocumentRepository documentRepository,
+                             FolderRepository folderRepository,
+                             DocumentPermissionRepository documentPermissionRepository,
+                             FolderPermissionRepository folderPermissionRepository,
+                             UserRepository userRepository) {
+        this(documentRepository, folderRepository, documentPermissionRepository,
+             folderPermissionRepository, userRepository, null);
     }
 
     // ---------------- caller context ----------------
@@ -333,6 +346,22 @@ public class PermissionService {
         entry.setSubjectId(subjectId);
         entry.setPermissionLevel(level.toUpperCase());
         FolderPermission saved = folderPermissionRepository.save(entry);
+
+        if (notificationService != null) {
+            if ("USER".equalsIgnoreCase(subjectType)) {
+                try {
+                    userRepository.findById(UUID.fromString(subjectId)).ifPresent(u ->
+                            notificationService.sendNotificationToUser(u, "Folder Access Granted",
+                                    "You were granted " + level + " access to folder '" + folder.getName() + "'.",
+                                    NotificationEventType.DOCUMENT_PERMISSION_GRANTED, "FOLDER", folder.getId(), "/library"));
+                } catch (Exception ignored) {}
+            } else if ("ROLE".equalsIgnoreCase(subjectType)) {
+                notificationService.sendNotificationToRole(subjectId, "Folder Access Granted",
+                        "Your role " + subjectId + " was granted " + level + " access to folder '" + folder.getName() + "'.",
+                        NotificationEventType.DOCUMENT_PERMISSION_GRANTED, "FOLDER", folder.getId(), "/library");
+            }
+        }
+
         return describe(saved.getId(), saved.getSubjectType(), saved.getSubjectId(), saved.getPermissionLevel(), null);
     }
 
@@ -370,6 +399,23 @@ public class PermissionService {
         entry.setSubjectId(subjectId);
         entry.setPermissionLevel(level.toUpperCase());
         DocumentPermission saved = documentPermissionRepository.save(entry);
+
+        if (notificationService != null) {
+            String docUrl = "/preview/" + doc.getId();
+            if ("USER".equalsIgnoreCase(subjectType)) {
+                try {
+                    userRepository.findById(UUID.fromString(subjectId)).ifPresent(u ->
+                            notificationService.sendNotificationToUser(u, "Document Access Granted",
+                                    "You were granted " + level + " access to document '" + doc.getTitle() + "'.",
+                                    NotificationEventType.DOCUMENT_PERMISSION_GRANTED, "DOCUMENT", doc.getId(), docUrl));
+                } catch (Exception ignored) {}
+            } else if ("ROLE".equalsIgnoreCase(subjectType)) {
+                notificationService.sendNotificationToRole(subjectId, "Document Access Granted",
+                        "Your role " + subjectId + " was granted " + level + " access to document '" + doc.getTitle() + "'.",
+                        NotificationEventType.DOCUMENT_PERMISSION_GRANTED, "DOCUMENT", doc.getId(), docUrl);
+            }
+        }
+
         return describe(saved.getId(), saved.getSubjectType(), saved.getSubjectId(), saved.getPermissionLevel(),
                 saved.getCreatedAt() != null ? saved.getCreatedAt().toString() : null);
     }

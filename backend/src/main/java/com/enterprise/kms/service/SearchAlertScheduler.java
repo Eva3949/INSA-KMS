@@ -61,10 +61,16 @@ public class SearchAlertScheduler {
                             "New results found for saved search \"%s\" — %d document(s) matched.",
                             savedSearch.getName(), results.getTotalElements());
 
+                    String searchUrl = "/search?q=" + java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8);
+
                     notificationService.sendNotification(
                             user.getUsername(),
                             "Search Alert: " + savedSearch.getName(),
-                            message);
+                            message,
+                            com.enterprise.kms.entity.NotificationEventType.SEARCH_ALERT,
+                            "SAVED_SEARCH",
+                            savedSearch.getId(),
+                            searchUrl);
 
                     log.info("FR-15: Alert sent to {} for search '{}'", user.getUsername(), savedSearch.getName());
                 }

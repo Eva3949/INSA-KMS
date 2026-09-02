@@ -13,7 +13,44 @@ interface TopHeaderProps {
 
 export const TopHeader: React.FC<TopHeaderProps> = ({ user }) => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
   const { logout } = useAuth();
+
+  React.useEffect(() => {
+    const fetchUnread = () => {
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+      if (!token) return;
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
+      fetch(`${API_BASE_URL}/notifications/unread-count`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data != null) {
+            const count = typeof data === 'number' ? data : data?.count ?? data?.unreadCount ?? 0;
+            setUnreadCount(count);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 20000);
+
+    const handleUpdate = (e: any) => {
+      if (typeof e?.detail?.count === 'number') {
+        setUnreadCount(e.detail.count);
+      } else {
+        fetchUnread();
+      }
+    };
+
+    window.addEventListener('kms_notification_updated', handleUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('kms_notification_updated', handleUpdate);
+    };
+  }, []);
 
   const initials = user?.fullName
     ? user.fullName
@@ -52,9 +89,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ user }) => {
           </div>
 
           {/* Notifications Trigger */}
-          <Link href="/notifications" className="p-1.5 text-slate-500 hover:text-blue-700 rounded-full hover:bg-slate-100 relative transition-colors" aria-label="Notifications">
+          <Link
+            href="/notifications"
+            className="p-1.5 text-slate-500 hover:text-blue-700 rounded-full hover:bg-slate-100 relative transition-colors"
+            aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
+          >
             <Bell className="w-4 h-4" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-blue-600 rounded-full ring-2 ring-white" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-white">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </Link>
 
           {/* User Profile Info */}

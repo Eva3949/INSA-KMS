@@ -232,9 +232,19 @@ public class ApprovalService {
 
         if (notificationService != null) {
             notificationService.sendNotification(username, "Approval Workflow Submitted",
-                    "Your document '" + doc.getTitle() + "' was submitted for approval workflow review.");
-            notificationService.sendNotificationToRole("ROLE_CONTENT_OWNER", "Pending Document Approval",
-                    "New document '" + doc.getTitle() + "' requires review in your Approval Inbox.");
+                    "Your document '" + doc.getTitle() + "' was submitted for approval workflow review.",
+                    NotificationEventType.DOCUMENT_SUBMITTED, "DOCUMENT", doc.getId(), "/my-approvals");
+
+            ApprovalTemplateStep firstStep = templateSteps.isEmpty() ? null : templateSteps.get(0);
+            if (firstStep != null && firstStep.getApprover() != null) {
+                notificationService.sendNotificationToUser(firstStep.getApprover(), "Document Approval Required",
+                        "Document '" + doc.getTitle() + "' has been submitted for your approval.",
+                        NotificationEventType.DOCUMENT_APPROVAL_REQUIRED, "DOCUMENT", doc.getId(), "/approvals");
+            } else {
+                notificationService.sendNotificationToRole("ROLE_CONTENT_OWNER", "Pending Document Approval",
+                        "New document '" + doc.getTitle() + "' requires review in your Approval Inbox.",
+                        NotificationEventType.DOCUMENT_APPROVAL_REQUIRED, "DOCUMENT", doc.getId(), "/approvals");
+            }
         }
 
         return describeWorkflow(workflow);
@@ -290,6 +300,19 @@ public class ApprovalService {
         auditService.recordAuditLog(username, null,
                 "DOCUMENT_SUBMITTED_FOR_APPROVAL", "DOCUMENT", doc.getId().toString(), null,
                 "{\"workflowId\":\"" + workflow.getId() + "\",\"templateName\":\"" + template.getName() + "\"}");
+
+        if (notificationService != null) {
+            ApprovalTemplateStep firstStep = templateSteps.isEmpty() ? null : templateSteps.get(0);
+            if (firstStep != null && firstStep.getApprover() != null) {
+                notificationService.sendNotificationToUser(firstStep.getApprover(), "Document Approval Required",
+                        "New document '" + doc.getTitle() + "' was uploaded and submitted for your approval.",
+                        NotificationEventType.DOCUMENT_APPROVAL_REQUIRED, "DOCUMENT", doc.getId(), "/approvals");
+            } else {
+                notificationService.sendNotificationToRole("ROLE_CONTENT_OWNER", "Pending Document Approval",
+                        "New document '" + doc.getTitle() + "' requires review in your Approval Inbox.",
+                        NotificationEventType.DOCUMENT_APPROVAL_REQUIRED, "DOCUMENT", doc.getId(), "/approvals");
+            }
+        }
         return true;
     }
 
@@ -350,7 +373,8 @@ public class ApprovalService {
             if (notificationService != null && workflow.getSubmittedBy() != null) {
                 notificationService.sendNotificationToUser(workflow.getSubmittedBy(),
                         "Document Approval Rejected",
-                        "Your document '" + doc.getTitle() + "' was rejected by " + username + ".");
+                        "Your document '" + doc.getTitle() + "' was rejected by " + username + (comments != null && !comments.isBlank() ? ": " + comments : "."),
+                        NotificationEventType.DOCUMENT_REJECTED, "DOCUMENT", doc.getId(), "/my-approvals");
             }
             return describeWorkflow(workflow);
         }
@@ -368,10 +392,17 @@ public class ApprovalService {
             auditService.recordAuditLog(username, null,
                     "DOCUMENT_APPROVAL_COMPLETED", "DOCUMENT", doc.getId().toString(), null,
                     "{\"workflowId\":\"" + workflow.getId() + "\"}");
-            if (notificationService != null && workflow.getSubmittedBy() != null) {
-                notificationService.sendNotificationToUser(workflow.getSubmittedBy(),
-                        "Document Approved & Published",
-                        "Your document '" + doc.getTitle() + "' has been fully approved and published.");
+            if (notificationService != null) {
+                if (workflow.getSubmittedBy() != null) {
+                    notificationService.sendNotificationToUser(workflow.getSubmittedBy(),
+                            "Document Approved & Published",
+                            "Your document '" + doc.getTitle() + "' has been fully approved and published.",
+                            NotificationEventType.DOCUMENT_APPROVED, "DOCUMENT", doc.getId(), "/preview/" + doc.getId());
+                }
+                notificationService.notifySubscribers("DOCUMENT", doc.getId(), "VERSION",
+                        "Document Published: " + doc.getTitle(),
+                        "Document '" + doc.getTitle() + "' has been approved and published.",
+                        "/preview/" + doc.getId());
             }
         } else {
             ApprovalStep nextStep = allSteps.stream()
@@ -381,6 +412,21 @@ public class ApprovalService {
             if (nextStep != null) {
                 nextStep.setStatus("PENDING");
                 approvalStepRepository.save(nextStep);
+
+                if (notificationService != null) {
+                    Document doc = workflow.getDocument();
+                    if (nextStep.getApprover() != null) {
+                        notificationService.sendNotificationToUser(nextStep.getApprover(),
+                                "Document Approval Required (Step " + nextStep.getStepNumber() + ")",
+                                "Document '" + doc.getTitle() + "' has progressed to your step for approval.",
+                                NotificationEventType.DOCUMENT_APPROVAL_REQUIRED, "DOCUMENT", doc.getId(), "/approvals");
+                    } else {
+                        notificationService.sendNotificationToRole("ROLE_CONTENT_OWNER",
+                                "Document Approval Required (Step " + nextStep.getStepNumber() + ")",
+                                "Document '" + doc.getTitle() + "' is waiting for Step " + nextStep.getStepNumber() + " approval.",
+                                NotificationEventType.DOCUMENT_APPROVAL_REQUIRED, "DOCUMENT", doc.getId(), "/approvals");
+                    }
+                }
             }
         }
 

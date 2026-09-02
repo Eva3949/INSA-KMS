@@ -89,20 +89,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
   const [storageTotal, setStorageTotal] = useState<number | null>(null);
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
-useEffect(() => {
-  const token = sessionStorage.getItem('kms_access_token');
-  if (!token) return;
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
-  fetch(`${API_BASE_URL}/notifications/unread-count`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-    .then((res) => res.ok ? res.json() : Promise.reject())
-    .then((data) => {
-      const count = typeof data === 'number' ? data : data?.count ?? data?.unreadCount ?? 0;
-      setUnreadCount(count);
-    })
-    .catch(() => {});
-}, []);
+  useEffect(() => {
+    const fetchUnread = () => {
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+      if (!token) return;
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
+      fetch(`${API_BASE_URL}/notifications/unread-count`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data != null) {
+            const count = typeof data === 'number' ? data : data?.count ?? data?.unreadCount ?? 0;
+            setUnreadCount(count);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 20000);
+
+    const handleUpdate = (e: any) => {
+      if (typeof e?.detail?.count === 'number') {
+        setUnreadCount(e.detail.count);
+      } else {
+        fetchUnread();
+      }
+    };
+
+    window.addEventListener('kms_notification_updated', handleUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('kms_notification_updated', handleUpdate);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAdmin) return;
