@@ -163,6 +163,27 @@ export const kmsApi = {
       }
       return res.json();
     },
+    bulkUpload: async (formData: FormData) => {
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE_URL}/documents/bulk-upload`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      if (!res.ok) {
+        let errText = '';
+        try {
+          errText = await res.text();
+        } catch {
+          errText = res.statusText;
+        }
+        throw new Error(`Bulk upload failed [${res.status}]: ${errText || res.statusText || 'Server Error'}`);
+      }
+      return res.json();
+    },
     createArticle: (payload: {
       title: string;
       category: string;

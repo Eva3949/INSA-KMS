@@ -136,6 +136,167 @@ public class DocumentService {
         return documentRepository.save(doc);
     }
 
+    private static final java.util.Set<String> DISALLOWED_EXTENSIONS = java.util.Set.of(
+            "exe", "dll", "bat", "cmd", "sh", "vbs", "msi", "scr", "com", "pif", "cpl", "jar", "wsf", "hta"
+    );
+
+    @Transactional
+    public Document createDocument(MultipartFile file,
+                                   String title,
+                                   String departmentCode,
+                                   String documentTypeName,
+                                   String confidentialityLevel,
+                                   Map<String, String> customMetadata,
+                                   List<String> tags,
+                                   String username) {
+        Document doc = createDocument(file, title, departmentCode, documentTypeName, confidentialityLevel, username);
+
+        if (customMetadata != null && !customMetadata.isEmpty()) {
+            applyCustomMetadata(doc, customMetadata);
+        }
+
+        if (tags != null && !tags.isEmpty()) {
+            for (String tag : tags) {
+                if (tag != null && !tag.isBlank()) {
+                    try {
+                        attachTag(doc.getId(), tag.trim());
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
+
+        return doc;
+    }
+
+    @Transactional
+    public void attachTag(UUID documentId, String tagName) {
+        if (tagName == null || tagName.isBlank() || documentId == null) return;
+        String clean = tagName.trim();
+        List<?> existingTags = entityManager.createNativeQuery("SELECT id FROM tags WHERE name = :name")
+                .setParameter("name", clean)
+                .getResultList();
+        UUID tagId;
+        if (!existingTags.isEmpty()) {
+            Object obj = existingTags.get(0);
+            tagId = obj instanceof UUID u ? u : UUID.fromString(obj.toString());
+        } else {
+            tagId = UUID.randomUUID();
+            entityManager.createNativeQuery("INSERT INTO tags (id, name) VALUES (:id, :name) ON CONFLICT DO NOTHING")
+                    .setParameter("id", tagId)
+                    .setParameter("name", clean)
+                    .executeUpdate();
+        }
+        entityManager.createNativeQuery("INSERT INTO document_tags (document_id, tag_id) VALUES (:docId, :tagId) ON CONFLICT DO NOTHING")
+                .setParameter("docId", documentId)
+                .setParameter("tagId", tagId)
+                .executeUpdate();
+    }
+
+    @Transactional
+    public void applyCustomMetadata(Document doc, Map<String, String> customMetadata) {
+        if (doc == null || doc.getId() == null || doc.getDocumentType() == null || customMetadata == null || customMetadata.isEmpty()) {
+            return;
+        }
+        List<DocumentTypeField> defs = documentTypeFieldRepository
+                .findByDocumentTypeIdOrderByCreatedAtAsc(doc.getDocumentType().getId());
+        for (Map.Entry<String, String> entry : customMetadata.entrySet()) {
+            String key = entry.getKey();
+            DocumentTypeField def = defs.stream()
+                    .filter(d -> d.getFieldKey().equalsIgnoreCase(key))
+                    .findFirst()
+                    .orElse(null);
+            if (def != null && entry.getValue() != null) {
+                validateMetadataValue(def, entry.getValue());
+                DocumentMetadata record = documentMetadataRepository
+                        .findByDocumentIdAndMetadataKey(doc.getId(), def.getFieldKey())
+                        .orElseGet(() -> {
+                            DocumentMetadata m = new DocumentMetadata();
+                            m.setDocument(doc);
+                            m.setMetadataKey(def.getFieldKey());
+                            return m;
+                        });
+                record.setMetadataValue(entry.getValue());
+                documentMetadataRepository.save(record);
+            }
+        }
+    }
+
+    public com.enterprise.kms.dto.BulkUploadResult bulkUploadDocuments(
+            List<MultipartFile> files,
+            List<String> titles,
+            String departmentCode,
+            String documentTypeName,
+            String confidentialityLevel,
+            Map<String, String> customMetadata,
+            List<String> tags,
+            NotificationService notificationService,
+            String username
+    ) {
+        com.enterprise.kms.dto.BulkUploadResult result = new com.enterprise.kms.dto.BulkUploadResult();
+        if (files == null || files.isEmpty()) {
+            return result;
+        }
+
+        for (int i = 0; i < files.size(); i++) {
+            MultipartFile file = files.get(i);
+            String originalFilename = (file != null && file.getOriginalFilename() != null && !file.getOriginalFilename().isBlank())
+                    ? file.getOriginalFilename()
+                    : "document_" + (i + 1);
+
+            String itemTitle = (titles != null && i < titles.size() && titles.get(i) != null && !titles.get(i).isBlank())
+                    ? titles.get(i).trim()
+                    : originalFilename;
+
+            if (file == null || file.isEmpty() || file.getSize() <= 0) {
+                result.addItem(new com.enterprise.kms.dto.BulkUploadItemResult(
+                        originalFilename, false, null, itemTitle, "File is empty (0 bytes).", 0L));
+                continue;
+            }
+
+            String ext = "";
+            int dotIdx = originalFilename.lastIndexOf('.');
+            if (dotIdx > 0 && dotIdx < originalFilename.length() - 1) {
+                ext = originalFilename.substring(dotIdx + 1).toLowerCase();
+            }
+
+            if (DISALLOWED_EXTENSIONS.contains(ext)) {
+                result.addItem(new com.enterprise.kms.dto.BulkUploadItemResult(
+                        originalFilename, false, null, itemTitle, "File type '." + ext + "' is disallowed for security reasons.", file.getSize()));
+                continue;
+            }
+
+            try {
+                Document doc = createDocument(file, itemTitle, departmentCode, documentTypeName, confidentialityLevel, customMetadata, tags, username);
+
+                if (notificationService != null) {
+                    try {
+                        notificationService.sendNotification(
+                                username,
+                                "Document Uploaded",
+                                "Document '" + doc.getTitle() + "' was uploaded successfully.",
+                                NotificationEventType.DOCUMENT_UPLOADED,
+                                "DOCUMENT",
+                                doc.getId(),
+                                "/preview/" + doc.getId()
+                        );
+                    } catch (Exception ignored) {}
+                }
+
+                result.addItem(new com.enterprise.kms.dto.BulkUploadItemResult(
+                        originalFilename, true, doc.getId(), doc.getTitle(), "Uploaded successfully.", file.getSize()));
+            } catch (Exception e) {
+                String errorMsg = e.getMessage() != null ? e.getMessage() : "Upload failed";
+                if (e instanceof ResponseStatusException rse && rse.getReason() != null) {
+                    errorMsg = rse.getReason();
+                }
+                result.addItem(new com.enterprise.kms.dto.BulkUploadItemResult(
+                        originalFilename, false, null, itemTitle, errorMsg, file.getSize()));
+            }
+        }
+
+        return result;
+    }
+
     @Transactional
     public com.enterprise.kms.dto.BulkOperationResult performBulkOperation(com.enterprise.kms.dto.BulkOperationRequest request, String username) {
         com.enterprise.kms.dto.BulkOperationResult result = new com.enterprise.kms.dto.BulkOperationResult();

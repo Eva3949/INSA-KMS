@@ -26,6 +26,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.enterprise.kms.entity.NotificationEventType;
 import com.enterprise.kms.service.NotificationService;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -185,6 +186,32 @@ public class DocumentController {
                     NotificationEventType.DOCUMENT_UPLOADED, "DOCUMENT", doc.getId(), "/preview/" + doc.getId());
         }
         return ResponseEntity.ok(documentService.toResponse(doc));
+    }
+
+    @PostMapping(value = "/bulk-upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    @AuditLog(action = "DOCUMENT_BULK_UPLOAD", resourceType = "DOCUMENT")
+    public ResponseEntity<com.enterprise.kms.dto.BulkUploadResult> bulkUpload(
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam(value = "titles", required = false) List<String> titles,
+            @RequestParam(value = "departmentCode", defaultValue = "ITSEC") String departmentCode,
+            @RequestParam(value = "documentTypeName", defaultValue = "Policy") String documentTypeName,
+            @RequestParam(value = "confidentialityLevel", defaultValue = "INTERNAL") String confidentialityLevel,
+            @RequestParam(value = "tags", required = false) List<String> tags,
+            @RequestParam Map<String, String> allParams) {
+        String username = SecurityUtils.getCurrentUsername();
+
+        Map<String, String> customMetadata = new java.util.LinkedHashMap<>();
+        allParams.forEach((k, v) -> {
+            if (k.startsWith("metadata.") && k.length() > 9) {
+                customMetadata.put(k.substring(9), v);
+            }
+        });
+
+        com.enterprise.kms.dto.BulkUploadResult result = documentService.bulkUploadDocuments(
+                files, titles, departmentCode, documentTypeName, confidentialityLevel, customMetadata, tags, notificationService, username
+        );
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/articles")
