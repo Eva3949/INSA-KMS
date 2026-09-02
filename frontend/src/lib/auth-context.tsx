@@ -96,15 +96,29 @@ async function tryRefreshToken(): Promise<string | null> {
   return null;
 }
 
+function isJwtExpired(token: string): boolean {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return true;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (!payload.exp) return false;
+    return Date.now() >= payload.exp * 1000 - 10000;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Try to get a valid token, refreshing silently if the current one is expired.
  * Returns null if no valid token can be obtained.
  */
 async function getValidToken(): Promise<string | null> {
-  let token = getStoredToken();
-  if (token) return token;
+  const token = getStoredToken();
+  if (token && !isJwtExpired(token)) {
+    return token;
+  }
 
-  // Token missing — try refresh
+  // Token missing or expired — try refresh
   const refreshed = await tryRefreshToken();
   if (refreshed) return refreshed;
 
