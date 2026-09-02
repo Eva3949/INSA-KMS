@@ -45,12 +45,19 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}, isRetry 
     }
   }
 
+  const mergedHeaders: Record<string, string> = {
+    ...defaultHeaders,
+    ...(options.headers as Record<string, string>),
+  };
+
+  if (options.body instanceof FormData) {
+    delete mergedHeaders['Content-Type'];
+    delete mergedHeaders['content-type'];
+  }
+
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
+    headers: mergedHeaders,
   });
 
   if (response.status === 401 && !isRetry && typeof window !== 'undefined') {
@@ -142,27 +149,10 @@ export const kmsApi = {
     putMetadata: (id: string, values: Record<string, string>) =>
       fetchApi<any>(`/documents/${id}/metadata`, { method: 'PUT', body: JSON.stringify(values) }),
     getById: (id: string) => fetchApi<any>(`/documents/${id}`),
-    upload: async (formData: FormData) => {
-      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE_URL}/documents/upload`, {
-        method: 'POST',
-        headers,
-        body: formData,
-      });
-      if (!res.ok) {
-        let errText = '';
-        try {
-          errText = await res.text();
-        } catch {
-          errText = res.statusText;
-        }
-        throw new Error(`Upload failed [${res.status}]: ${errText || res.statusText || 'Server Error'}`);
-      }
-      return res.json();
-    },
+    upload: (formData: FormData) => fetchApi<any>('/documents/upload', {
+      method: 'POST',
+      body: formData,
+    }),
     createArticle: (payload: {
       title: string;
       category: string;
@@ -178,37 +168,19 @@ export const kmsApi = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-    uploadMedia: async (formData: FormData) => {
-      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE_URL}/documents/media-upload`, {
-        method: 'POST',
-        headers,
-        body: formData,
-      });
-      if (!res.ok) throw new Error(`Media upload failed: ${res.statusText}`);
-      return res.json();
-    },
+    uploadMedia: (formData: FormData) => fetchApi<{ url: string }>('/documents/media-upload', {
+      method: 'POST',
+      body: formData,
+    }),
     bulk: (payload: { operation: string; documentIds: string[]; targetFolderId?: string; tags?: string[]; confidentialityLevel?: string }) => fetchApi<any>('/documents/bulk', {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
     desktopOpen: (id: string) => fetchApi<{ documentId: string; fileName: string; extension: string; protocolUri: string; downloadUrl: string; openMethod: string }>(`/documents/${id}/desktop-open`),
-    desktopCheckIn: async (id: string, formData: FormData) => {
-      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE_URL}/documents/${id}/desktop-checkin`, {
-        method: 'POST',
-        headers,
-        body: formData,
-      });
-      if (!res.ok) throw new Error(`Desktop check-in failed: ${res.statusText}`);
-      return res.json();
-    },
+    desktopCheckIn: (id: string, formData: FormData) => fetchApi<any>(`/documents/${id}/desktop-checkin`, {
+      method: 'POST',
+      body: formData,
+    }),
     delete: (id: string) => fetchApi<void>(`/documents/${id}`, { method: 'DELETE' }),
     restore: (id: string) => fetchApi<void>(`/documents/${id}/restore`, { method: 'POST' }),
     getVersions: (id: string) => fetchApi<any[]>(`/documents/${id}/versions`),
@@ -242,14 +214,10 @@ export const kmsApi = {
     getSharedWithMe: () => fetchApi<any[]>('/documents/shared-with-me'),
     getLockStatus: (id: string) => fetchApi<any>(`/documents/${id}/lock-status`),
     checkout: (id: string) => fetchApi<any>(`/documents/${id}/checkout`, { method: 'POST' }),
-    checkin: async (id: string, formData: FormData) => {
-      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch(`${API_BASE_URL}/documents/${id}/checkin`, { method: 'POST', headers, body: formData });
-      if (!res.ok) throw new Error(`Check-in failed: ${res.statusText}`);
-      return res.json();
-    },
+    checkin: (id: string, formData: FormData) => fetchApi<any>(`/documents/${id}/checkin`, {
+      method: 'POST',
+      body: formData,
+    }),
     unlock: (id: string) => fetchApi<any>(`/documents/${id}/unlock`, { method: 'POST' }),
     getShareLinks: (id: string) => fetchApi<any[]>(`/documents/${id}/share-links`),
     createShareLink: (id: string, payload: { expiryHours?: number; password?: string }) =>
@@ -582,7 +550,54 @@ export const kmsApi = {
       fetchApi<{ unreadCount: number }>('/notifications/unread-count').then(
         (data: any) => ({ unreadCount: typeof data === 'number' ? data : (data?.unreadCount ?? data?.count ?? 0) })
       ),
-    markRead: (id: string) => fetchApi<void>(`/notifications/${id}/read`, { method: 'PUT' }),
-    markAllRead: () => fetchApi<void>('/notifications/read-all', { method: 'PUT' }),
+    markRead: (id: string) => fetchApi<void>(`/notifications/${id}/read`, { method: 'POST' }),
+    markAllRead: () => fetchApi<void>('/notifications/read-all', { method: 'POST' }),
+  },
+
+  // Blogs & News
+  blogs: {
+    list: (params?: { status?: string; category?: string; search?: string; page?: number; size?: number; sort?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.status && params.status !== 'ALL') q.set('status', params.status);
+      if (params?.category && params.category !== 'ALL') q.set('category', params.category);
+      if (params?.search) q.set('search', params.search);
+      if (params?.page !== undefined) q.set('page', String(params.page));
+      if (params?.size !== undefined) q.set('size', String(params.size));
+      if (params?.sort) q.set('sort', params.sort);
+      return fetchApi<any>(`/blogs?${q.toString()}`);
+    },
+    getById: (id: string) => fetchApi<any>(`/blogs/${id}`),
+    create: (payload: { title: string; content: string; category?: string; coverImageUrl?: string; status?: string }) =>
+      fetchApi<any>('/blogs', { method: 'POST', body: JSON.stringify(payload) }),
+    update: (id: string, payload: { title?: string; content?: string; category?: string; coverImageUrl?: string; status?: string }) =>
+      fetchApi<any>(`/blogs/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    publish: (id: string) => fetchApi<any>(`/blogs/${id}/publish`, { method: 'PUT' }),
+    unpublish: (id: string) => fetchApi<any>(`/blogs/${id}/unpublish`, { method: 'PUT' }),
+    delete: (id: string) => fetchApi<void>(`/blogs/${id}`, { method: 'DELETE' }),
+  },
+
+  // Discussions & Forum
+  discussions: {
+    list: (params?: { status?: string; category?: string; search?: string; page?: number; size?: number; sort?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.status && params.status !== 'ALL') q.set('status', params.status);
+      if (params?.category && params.category !== 'ALL') q.set('category', params.category);
+      if (params?.search) q.set('search', params.search);
+      if (params?.page !== undefined) q.set('page', String(params.page));
+      if (params?.size !== undefined) q.set('size', String(params.size));
+      if (params?.sort) q.set('sort', params.sort);
+      return fetchApi<any>(`/discussions?${q.toString()}`);
+    },
+    getById: (id: string) => fetchApi<any>(`/discussions/${id}`),
+    getReplies: (id: string) => fetchApi<any[]>(`/discussions/${id}/replies`),
+    createTopic: (payload: { title: string; description: string; category?: string }) =>
+      fetchApi<any>('/discussions', { method: 'POST', body: JSON.stringify(payload) }),
+    updateStatus: (id: string, status: 'OPEN' | 'CLOSED') =>
+      fetchApi<any>(`/discussions/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+    deleteTopic: (id: string) => fetchApi<void>(`/discussions/${id}`, { method: 'DELETE' }),
+    createReply: (topicId: string, payload: { content: string; parentReplyId?: string }) =>
+      fetchApi<any>(`/discussions/${topicId}/replies`, { method: 'POST', body: JSON.stringify(payload) }),
+    deleteReply: (replyId: string) => fetchApi<void>(`/discussions/replies/${replyId}`, { method: 'DELETE' }),
   },
 };
+
