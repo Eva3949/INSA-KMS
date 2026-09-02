@@ -48,6 +48,7 @@ public class DocumentController {
     private final com.enterprise.kms.service.SearchService searchService;
     private final NotificationService notificationService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public DocumentController(DocumentService documentService, PermissionService permissionService,
                               com.enterprise.kms.service.SystemSettingService systemSettingService,
                               ShareLinkService shareLinkService,

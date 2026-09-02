@@ -25,8 +25,9 @@ import {
   ShieldAlert,
   UsersRound,
   KeyRound,
+  ScanLine,
   GitPullRequestArrow,
-  ScanLine
+  X
 } from 'lucide-react';
 import { UserRole, hasRole } from '@/src/lib/auth';
 import { AuthUser } from '@/src/lib/auth-context';
@@ -35,9 +36,11 @@ import { kmsApi } from '@/src/lib/api';
 interface SidebarProps {
   userRoles: UserRole[];
   user: AuthUser | null;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, onCloseMobile }) => {
   const pathname = usePathname();
 
   const mainNav = [
@@ -156,33 +159,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
         .slice(0, 2)
     : user?.username?.slice(0, 2).toUpperCase() ?? '??';
 
-  return (
-    <aside className="w-64 bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 h-screen sticky top-0 shadow-2xs">
-      {/* Branding with Official INSA Logo & Right-Aligned Title */}
-      <Link
-        href="/"
-        className="h-16 px-3.5 flex items-center justify-between border-b border-slate-200 bg-white hover:bg-slate-50/80 transition-colors group"
-      >
-        <img
-          src="/images/insalogo.png"
-          alt="INSA Logo"
-          className="h-8.5 w-auto max-w-[135px] object-contain shrink-0"
-        />
-        <div className="flex flex-col items-end text-right shrink-0">
-          <div className="flex items-center gap-1">
-            <span className="text-xs font-black tracking-tight text-slate-900 group-hover:text-blue-700 transition-colors">
-              INSA
-            </span>
-            <span className="text-[9px] font-black px-1.5 py-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-md tracking-wider uppercase shadow-2xs">
-              KMS
-            </span>
-          </div>
-          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-            Knowledge
-          </span>
-        </div>
-      </Link>
-
+  const renderNavContent = (isMobile = false) => (
+    <>
       {/* Primary Navigation */}
       <div className="flex-1 overflow-y-auto py-3 px-2 space-y-5">
         <div>
@@ -200,6 +178,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={isMobile ? onCloseMobile : undefined}
                   className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs rounded transition-all ${
                     isActive
                       ? 'bg-blue-50 text-blue-700 font-bold border-l-4 border-blue-700 pl-2'
@@ -208,11 +187,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
                 >
                   <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-700' : 'text-slate-400'}`} />
                   <span className="truncate">{item.label}</span>
-{item.href === '/notifications' && unreadCount > 0 && (
-  <span className="ml-auto bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-    {unreadCount > 99 ? '99+' : unreadCount}
-  </span>
-)}
+                  {item.href === '/notifications' && unreadCount > 0 && (
+                    <span className="ml-auto bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -236,6 +215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={isMobile ? onCloseMobile : undefined}
                     className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs rounded transition-all ${
                       isActive
                         ? 'bg-blue-50 text-blue-700 font-bold border-l-4 border-blue-700 pl-2'
@@ -268,6 +248,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={isMobile ? onCloseMobile : undefined}
                     className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs rounded transition-all ${
                       isActive
                         ? 'bg-blue-50 text-blue-700 font-bold border-l-4 border-blue-700 pl-2'
@@ -321,6 +302,91 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user }) => {
           <div className="text-slate-400 text-[11px]">Loading storage info...</div>
         ) : null}
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop Sidebar (Fixed) */}
+      <aside className="hidden lg:flex w-64 bg-white text-slate-700 flex-col border-r border-slate-200 shrink-0 h-screen sticky top-0 shadow-2xs">
+        {/* Branding with Official INSA Logo & Right-Aligned Title */}
+        <Link
+          href="/"
+          className="h-16 px-3.5 flex items-center justify-between border-b border-slate-200 bg-white hover:bg-slate-50/80 transition-colors group"
+        >
+          <img
+            src="/images/insalogo.png"
+            alt="INSA Logo"
+            className="h-8.5 w-auto max-w-[135px] object-contain shrink-0"
+          />
+          <div className="flex flex-col items-end text-right shrink-0">
+            <div className="flex items-center gap-1">
+              <span className="text-xs font-black tracking-tight text-slate-900 group-hover:text-blue-700 transition-colors">
+                INSA
+              </span>
+              <span className="text-[9px] font-black px-1.5 py-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-md tracking-wider uppercase shadow-2xs">
+                KMS
+              </span>
+            </div>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+              Knowledge
+            </span>
+          </div>
+        </Link>
+
+        {renderNavContent(false)}
+      </aside>
+
+      {/* Mobile Drawer (Overlay) */}
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            onClick={onCloseMobile}
+            aria-hidden="true"
+          />
+
+          {/* Sliding Content */}
+          <aside
+            className="relative w-72 max-w-[85vw] bg-white text-slate-700 flex flex-col border-r border-slate-200 shadow-2xl h-full z-10"
+            aria-label="Mobile Navigation"
+          >
+            {/* Header with Close Button */}
+            <div className="h-16 px-3.5 flex items-center justify-between border-b border-slate-200 bg-white">
+              <Link
+                href="/"
+                onClick={onCloseMobile}
+                className="flex items-center justify-between flex-1 pr-2"
+              >
+                <img
+                  src="/images/insalogo.png"
+                  alt="INSA Logo"
+                  className="h-8 w-auto max-w-[120px] object-contain shrink-0"
+                />
+                <div className="flex flex-col items-end text-right shrink-0">
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-black tracking-tight text-slate-900">INSA</span>
+                    <span className="text-[9px] font-black px-1.5 py-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-md tracking-wider uppercase shadow-2xs">
+                      KMS
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Knowledge</span>
+                </div>
+              </Link>
+              <button
+                onClick={onCloseMobile}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100 transition-colors shrink-0"
+                aria-label="Close navigation"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {renderNavContent(true)}
+          </aside>
+        </div>
+      )}
+    </>
   );
 };

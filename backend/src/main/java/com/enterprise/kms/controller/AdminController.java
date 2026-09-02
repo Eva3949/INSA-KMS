@@ -62,6 +62,7 @@ public class AdminController {
     private final com.enterprise.kms.service.AuditService auditService;
     private final com.enterprise.kms.service.NotificationService notificationService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public AdminController(UserRepository userRepository,
                            DocumentRepository documentRepository,
                            DepartmentRepository departmentRepository,

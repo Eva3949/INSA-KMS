@@ -356,7 +356,7 @@ export default function AdminUsersPage() {
             </h1>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={() => fetchUsers(searchQuery)}
               variant="outline"
@@ -390,7 +390,7 @@ export default function AdminUsersPage() {
         </div>
 
         {/* Search Bar */}
-        <form onSubmit={handleSearch} className="flex gap-2">
+        <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-kms-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input

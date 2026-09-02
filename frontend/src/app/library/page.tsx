@@ -277,7 +277,7 @@ export default function DocumentLibraryPage() {
     <AppShell>
       <div className="space-y-5">
         {/* Header & Breadcrumb */}
-        <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-kms-slate-200 pb-3 gap-3">
           <div>
             <Breadcrumb items={[{ label: 'Document Library' }]} />
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight">
@@ -286,7 +286,7 @@ export default function DocumentLibraryPage() {
           </div>
 
           {canWrite && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -322,8 +322,8 @@ export default function DocumentLibraryPage() {
         )}
 
         {/* Filter & View Mode Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 border border-kms-slate-200 rounded-lg shadow-xs">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white p-3 border border-kms-slate-200 rounded-lg shadow-xs">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
             <div className="flex items-center gap-1.5 text-xs text-kms-slate-600 font-semibold">
               <Filter className="w-3.5 h-3.5 text-kms-slate-400" />
               <span>Filters:</span>
@@ -340,7 +340,7 @@ export default function DocumentLibraryPage() {
                 setSelectedDept(e.target.value);
                 setCurrentPage(0);
               }}
-              className="w-48"
+              className="w-full sm:w-44 md:w-48"
             />
 
             {/* Document Category Filter */}
@@ -354,7 +354,7 @@ export default function DocumentLibraryPage() {
                 setSelectedDocType(e.target.value);
                 setCurrentPage(0);
               }}
-              className="w-48"
+              className="w-full sm:w-44 md:w-48"
             />
 
             {/* Classification Filter */}
@@ -371,7 +371,7 @@ export default function DocumentLibraryPage() {
                 setFilterClass(e.target.value);
                 setCurrentPage(0);
               }}
-              className="w-44"
+              className="w-full sm:w-40 md:w-44"
             />
 
             {(selectedDept !== 'ALL' || selectedDocType !== 'ALL' || filterClass !== 'ALL') && (
@@ -442,7 +442,7 @@ export default function DocumentLibraryPage() {
               ) : (
                 <>
                   {viewMode === 'grid' ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5">
                       {filteredDocs.map((doc: ApiDocument & { isArticle?: boolean; knowledgeType?: string }) => {
                         const isArt = doc.isArticle || doc.fileName?.endsWith('.md') || doc.knowledgeType === 'SOP';
                         const coverImg = isArt ? extractArticleCoverImage(doc) : null;

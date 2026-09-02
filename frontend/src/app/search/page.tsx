@@ -121,7 +121,7 @@ export default function AdvancedSearchPage() {
   return (
     <AppShell>
       <div className="space-y-5">
-        <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-kms-slate-200 pb-3 gap-3">
           <div>
             <Breadcrumb items={[{ label: 'Search & Discovery' }, { label: 'Advanced Search' }]} />
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
@@ -129,7 +129,7 @@ export default function AdvancedSearchPage() {
               Full-Text &amp; Faceted Search Engine
             </h1>
           </div>
-          <Link href="/search/saved">
+          <Link href="/search/saved" className="shrink-0">
             <Button variant="outline" size="sm" icon={<Bookmark className="w-4 h-4" />}>
               Saved Searches &amp; Alerts
             </Button>
@@ -139,7 +139,7 @@ export default function AdvancedSearchPage() {
         {/* Search Query Builder */}
         <Card title="Query Builder &amp; Parameters">
           <div className="space-y-3">
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-kms-slate-400 absolute left-3 top-2.5" />
                 <input
@@ -227,7 +227,7 @@ export default function AdvancedSearchPage() {
             </div>
 
             {/* Facets & Filter Controls */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
               <Select
                 label="Department"
                 options={[

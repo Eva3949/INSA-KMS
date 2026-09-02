@@ -417,7 +417,7 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
               </div>
             </div>
 
-            <div className="kms-card bg-kms-slate-200 border border-kms-slate-400 min-h-[600px] flex items-center justify-center overflow-hidden shadow-inner">
+            <div className="kms-card bg-kms-slate-200 border border-kms-slate-400 min-h-[360px] sm:min-h-[480px] md:min-h-[600px] flex items-center justify-center overflow-hidden shadow-inner">
               {previewError ? (
                 <div className="text-center p-8 space-y-3">
                   <FileText className="w-10 h-10 text-kms-slate-400 mx-auto" />
@@ -428,9 +428,9 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
                 </div>
               ) : canInline && objectUrl ? (
                 mime.startsWith('image/') ? (
-                  <img src={objectUrl} alt={title} className="max-h-[750px] max-w-full object-contain bg-white" />
+                  <img src={objectUrl} alt={title} className="max-h-[450px] sm:max-h-[600px] md:max-h-[750px] max-w-full object-contain bg-white" />
                 ) : (
-                  <iframe src={objectUrl} title={title} className="w-full h-[750px] bg-white" />
+                  <iframe src={objectUrl} title={title} className="w-full h-[450px] sm:h-[600px] md:h-[750px] bg-white" />
                 )
               ) : canInline ? (
                 <LoadingState message="Rendering preview..." />

@@ -15,6 +15,7 @@ interface AppShellProps {
 
 export const AppShell: React.FC<AppShellProps> = ({ children, requiredRole }) => {
   const { user, roles, isAuthenticated, isLoading } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const router = useRouter();
 
   // While auth state is being resolved, show a full-page loader
@@ -47,13 +48,21 @@ export const AppShell: React.FC<AppShellProps> = ({ children, requiredRole }) =>
 
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900 antialiased">
-      {/* Sidebar Navigation */}
-      <Sidebar userRoles={roles} user={user} />
+      {/* Sidebar Navigation (Desktop Fixed + Mobile Overlay Drawer) */}
+      <Sidebar
+        userRoles={roles}
+        user={user}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
+      />
 
       {/* Main Workspace Layout Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <TopHeader user={user} />
-        <main className="flex-1 p-6 overflow-y-auto">
+        <TopHeader
+          user={user}
+          onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
+        />
+        <main className="flex-1 p-3.5 sm:p-4 md:p-6 overflow-y-auto max-w-full">
           {children}
         </main>
       </div>

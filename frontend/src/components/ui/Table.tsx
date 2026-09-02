@@ -20,8 +20,8 @@ export function Table<T>({
   emptyText = 'No data available',
 }: TableProps<T>) {
   return (
-    <div className="w-full overflow-x-auto border border-kms-slate-200 rounded bg-white shadow-2xs">
-      <table className="w-full text-left text-xs border-collapse">
+    <div className="w-full overflow-x-auto border border-kms-slate-200 rounded-lg bg-white shadow-2xs">
+      <table className="w-full min-w-[640px] text-left text-xs border-collapse">
         <thead>
           <tr className="bg-kms-slate-100 border-b border-kms-slate-300 text-kms-slate-700 font-bold uppercase tracking-wider text-[11px]">
             {columns.map((col, idx) => (

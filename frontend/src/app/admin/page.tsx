@@ -65,7 +65,7 @@ export default function AdminDashboardPage() {
   return (
     <AppShell requiredRole="ROLE_ADMIN">
       <div className="space-y-5">
-        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-3 gap-3">
           <div>
             <Breadcrumb items={[{ label: 'Administration' }, { label: 'Admin Dashboard' }]} />
             <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
@@ -73,7 +73,7 @@ export default function AdminDashboardPage() {
               Enterprise Administration &amp; System Management Console
             </h1>
           </div>
-          <div className="hidden md:flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full font-semibold text-[11px]">
+          <div className="hidden md:flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full font-semibold text-[11px] shrink-0">
             <ShieldCheck className="w-3.5 h-3.5" />
             ROLE_ADMIN Access Verified
           </div>
@@ -85,7 +85,7 @@ export default function AdminDashboardPage() {
         {!isLoading && !error && summary && (
           <>
             {/* High-level metrics grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
               {/* Green card — Users */}
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 shadow-2xs">
                 <div className="flex items-start justify-between">
@@ -155,7 +155,7 @@ export default function AdminDashboardPage() {
         )}
 
         {/* Administration Navigation Quick Links */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Card title="User &amp; Security Management">
             <div className="space-y-2 text-xs">
               <Link href="/admin/users" className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-md flex items-center justify-between font-semibold text-slate-800 hover:text-blue-700 transition-colors">

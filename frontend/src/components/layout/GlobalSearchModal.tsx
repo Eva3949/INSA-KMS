@@ -30,27 +30,27 @@ export const GlobalSearchModal: React.FC<GlobalSearchModalProps> = ({ isOpen, on
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-kms-slate-900/60 backdrop-blur-xs flex items-start justify-center pt-20 p-4">
-      <div className="bg-white border border-kms-slate-300 rounded-md shadow-2xl w-full max-w-2xl overflow-hidden">
-        <div className="p-3 border-b border-kms-slate-200 flex items-center gap-3">
+    <div className="fixed inset-0 z-50 bg-kms-slate-900/60 backdrop-blur-xs flex items-start justify-center pt-10 sm:pt-20 p-3 sm:p-4">
+      <div className="bg-white border border-kms-slate-300 rounded-lg shadow-2xl w-full max-w-2xl overflow-hidden">
+        <div className="p-3 border-b border-kms-slate-200 flex items-center gap-2.5">
           <Search className="w-5 h-5 text-blue-700 shrink-0" />
           <input
             type="text"
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Quick search across documents, metadata, OCR text, and tags (Ctrl+K)..."
-            className="w-full text-sm text-kms-slate-900 placeholder:text-kms-slate-400 focus:outline-none bg-transparent"
+            placeholder="Quick search documents, metadata, OCR, and tags (Ctrl+K)..."
+            className="w-full text-xs sm:text-sm text-kms-slate-900 placeholder:text-kms-slate-400 focus:outline-none bg-transparent min-w-0"
           />
-          <button onClick={onClose} className="p-1 text-kms-slate-400 hover:text-kms-slate-700">
+          <button onClick={onClose} className="p-1 text-kms-slate-400 hover:text-kms-slate-700 shrink-0" aria-label="Close search modal">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-4 text-xs text-kms-slate-600 bg-kms-slate-50 border-t border-kms-slate-100 flex items-center justify-between">
-          <span>Press <strong>ESC</strong> to exit or <strong>Enter</strong> for advanced search</span>
-          <Link href={`/search`} onClick={onClose} className="text-blue-700 hover:underline font-semibold flex items-center gap-1">
-            Open Advanced Search Engine <ArrowRight className="w-3 h-3" />
+        <div className="p-3 sm:p-4 text-xs text-kms-slate-600 bg-kms-slate-50 border-t border-kms-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span className="text-[11px] sm:text-xs">Press <strong>ESC</strong> to exit or <strong>Enter</strong> for search</span>
+          <Link href={`/search`} onClick={onClose} className="text-blue-700 hover:underline font-semibold flex items-center gap-1 text-[11px] sm:text-xs shrink-0">
+            Open Advanced Search Engine <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       </div>

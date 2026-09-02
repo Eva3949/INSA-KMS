@@ -144,7 +144,7 @@ export default function SecurityAuditLogsPage() {
   return (
     <AppShell requiredRole="ROLE_COMPLIANCE_OFFICER">
       <div className="space-y-5">
-        <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-kms-slate-200 pb-3 gap-3">
           <div>
             <Breadcrumb items={[{ label: 'Governance & Compliance' }, { label: 'Security Audit Logs' }]} />
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
@@ -156,7 +156,7 @@ export default function SecurityAuditLogsPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" icon={<Download className="w-4 h-4" />} onClick={handleExport}>
               Export Audit Ledger (CSV)
             </Button>
@@ -169,7 +169,7 @@ export default function SecurityAuditLogsPage() {
         {error && <Alert type="error">{error}</Alert>}
 
         {/* Audit Filter Toolbar */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white p-3 border border-kms-slate-200 rounded shadow-xs items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-white p-3 border border-kms-slate-200 rounded shadow-xs items-end">
           <Input
             label="Filter by User"
             placeholder="User ID / Email..."

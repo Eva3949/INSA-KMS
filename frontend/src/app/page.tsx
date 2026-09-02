@@ -196,7 +196,7 @@ export default function DashboardOverviewPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link href="/search">
               <Button variant="outline" size="sm" icon={<Search className="w-4 h-4" />}>
                 Advanced Search
@@ -238,7 +238,7 @@ export default function DashboardOverviewPage() {
               />
             )}
             {!summaryLoading && !summaryError && summary && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
                 {/* Blue card — Total Documents */}
                 <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
                   <div className="flex items-start justify-between">
@@ -361,7 +361,7 @@ export default function DashboardOverviewPage() {
         {!isAdmin && (
           <div className="space-y-6">
             {/* Quick Stats Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 sm:gap-4">
               <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
                 <div className="flex items-start justify-between">
                   <div>
@@ -411,7 +411,7 @@ export default function DashboardOverviewPage() {
             {/* Quick Actions */}
             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs">
               <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Quick Actions</h3>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap gap-2.5 sm:gap-3">
                 <Link href="/upload">
                   <Button variant="primary" size="sm" icon={<Upload className="w-4 h-4" />}>
                     Upload Document
@@ -436,7 +436,7 @@ export default function DashboardOverviewPage() {
                 <div className="flex items-center justify-between">
                   <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">My Favorites</h2>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {favorites.map((doc) => (
                     <Link key={doc.id} href={`/preview/${doc.id}`}>
                       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:border-blue-300 hover:shadow-md transition-all cursor-pointer h-full">

@@ -291,8 +291,8 @@ export default function AdminDepartmentsPage() {
         {error && <Alert type="error">{error}</Alert>}
 
         {/* Search & Filter Toolbar */}
-        <div className="flex items-center justify-between gap-3 bg-white p-3 border border-kms-slate-200 rounded-lg shadow-xs">
-          <form onSubmit={handleSearch} className="flex items-center gap-2 flex-1 max-w-md">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 border border-kms-slate-200 rounded-lg shadow-xs">
+          <form onSubmit={handleSearch} className="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 w-full max-w-md">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-kms-slate-400 absolute left-3 top-2.5" />
               <input

@@ -173,10 +173,10 @@ export default function NotificationsPage() {
         </div>
 
         {/* Filter Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-200 text-xs">
+        <div className="flex items-center gap-2 border-b border-slate-200 text-xs overflow-x-auto">
           <button
             onClick={() => setActiveTab('all')}
-            className={`pb-2.5 px-3 font-semibold border-b-2 transition-colors ${
+            className={`pb-2.5 px-3 font-semibold border-b-2 transition-colors shrink-0 ${
               activeTab === 'all'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -186,7 +186,7 @@ export default function NotificationsPage() {
           </button>
           <button
             onClick={() => setActiveTab('unread')}
-            className={`pb-2.5 px-3 font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 font-semibold border-b-2 transition-colors flex items-center gap-1.5 shrink-0 ${
               activeTab === 'unread'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -227,7 +227,7 @@ export default function NotificationsPage() {
                 <div
                   key={notification.id}
                   onClick={() => handleNotificationClick(notification)}
-                  className={`p-4 rounded-lg border transition-all select-none ${
+                  className={`p-3.5 sm:p-4 rounded-lg border transition-all select-none ${
                     hasLink ? 'cursor-pointer' : 'cursor-default'
                   } ${
                     notification.isRead
@@ -235,7 +235,7 @@ export default function NotificationsPage() {
                       : 'bg-blue-50/70 border-blue-200 hover:bg-blue-100/60 shadow-xs'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 sm:gap-3">
                     <div className="flex items-start gap-3 min-w-0">
                       <div
                         className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${

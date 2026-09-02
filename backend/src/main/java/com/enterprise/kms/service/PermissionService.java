@@ -61,6 +61,7 @@ public class PermissionService {
     @PersistenceContext
     private EntityManager entityManager;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public PermissionService(DocumentRepository documentRepository,
                              FolderRepository folderRepository,
                              DocumentPermissionRepository documentPermissionRepository,
