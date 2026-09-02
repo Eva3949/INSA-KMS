@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -593,6 +594,17 @@ public class DocumentService {
                 .orElseGet(() -> author.getDepartment() != null ? author.getDepartment() : departmentRepository.findAll().get(0));
 
         DocumentType docType = documentTypeRepository.findByName(knowledgeType)
+                .or(() -> {
+                    if (knowledgeType != null && !knowledgeType.isBlank()) {
+                        try {
+                            DocumentType newDt = new DocumentType();
+                            newDt.setName(knowledgeType.trim());
+                            newDt.setDescription("Knowledge article type: " + knowledgeType.trim());
+                            return Optional.of(documentTypeRepository.save(newDt));
+                        } catch (Exception ignored) {}
+                    }
+                    return Optional.empty();
+                })
                 .or(() -> documentTypeRepository.findByName("Article"))
                 .or(() -> documentTypeRepository.findByName("Policy"))
                 .orElseGet(() -> documentTypeRepository.findAll().get(0));

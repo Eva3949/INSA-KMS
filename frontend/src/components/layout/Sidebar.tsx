@@ -58,7 +58,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
     { href: '/notifications', label: 'Notifications', icon: Bell, role: 'ROLE_VIEWER' },
     { href: '/my-approvals', label: 'My Submissions', icon: GitPullRequestArrow, role: 'ROLE_CONTRIBUTOR' },
     { href: '/approvals', label: 'Approval Inbox', icon: GitPullRequestArrow, role: 'ROLE_CONTENT_OWNER' },
-    { href: '/knowledge-transfer', label: 'Knowledge Transfer', icon: GitPullRequestArrow, role: 'ROLE_VIEWER' },
     { href: '/profile', label: 'User Profile', icon: User, role: 'ROLE_VIEWER' },
   ];
 
@@ -70,21 +69,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
   ];
 
   const adminNav = [
-    { href: '/admin', label: 'Admin Dashboard', icon: Settings, role: 'ROLE_ADMIN' },
-    { href: '/hr/employees', label: 'HR & Employee Management', icon: Users, role: 'ROLE_ADMIN' },
-    { href: '/admin/users', label: 'Users & Groups', icon: Users, role: 'ROLE_ADMIN' },
-    { href: '/admin/groups', label: 'Groups & Membership', icon: UsersRound, role: 'ROLE_ADMIN' },
-    { href: '/admin/roles', label: 'Roles & Matrix', icon: ShieldCheck, role: 'ROLE_ADMIN' },
-    { href: '/admin/permissions', label: 'Access Control', icon: KeyRound, role: 'ROLE_ADMIN' },
-    { href: '/admin/departments', label: 'Departments & Quotas', icon: BarChart2, role: 'ROLE_ADMIN' },
-    { href: '/admin/document-types', label: 'Document Categories & Types', icon: FileCheck2, role: 'ROLE_ADMIN' },
-    { href: '/admin/taxonomy', label: 'Taxonomy & Tags', icon: Tag, role: 'ROLE_ADMIN' },
-    { href: '/admin/storage', label: 'Storage & Integrity', icon: HardDrive, role: 'ROLE_ADMIN' },
-    { href: '/admin/ocr', label: 'OCR Queue', icon: ScanLine, role: 'ROLE_ADMIN' },
-    { href: '/admin/reports', label: 'Usage & Stale Reports', icon: BarChart2, role: 'ROLE_ADMIN' },
-    { href: '/admin/security', label: 'Security Alerts', icon: ShieldAlert, role: 'ROLE_IT_SECURITY' },
-    { href: '/admin/approvals', label: 'Approval Workflows', icon: GitPullRequestArrow, role: 'ROLE_ADMIN' },
-    { href: '/admin/settings', label: 'System Settings', icon: Settings, role: 'ROLE_ADMIN' },
+    { href: '/admin', label: 'Admin Dashboard', icon: Settings, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/hr/employees', label: 'HR & Employee Management', icon: Users, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/knowledge-transfer', label: 'Knowledge Transfer', icon: GitPullRequestArrow, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/admin/users', label: 'Users & Groups', icon: Users, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/admin/groups', label: 'Groups & Membership', icon: UsersRound, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/admin/roles', label: 'Roles & Matrix', icon: ShieldCheck, role: 'ROLE_SUPER_ADMIN' as UserRole },
+    { href: '/admin/permissions', label: 'Access Control', icon: KeyRound, role: 'ROLE_SUPER_ADMIN' as UserRole },
+    { href: '/admin/departments', label: 'Departments & Quotas', icon: BarChart2, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/admin/document-types', label: 'Document Categories & Types', icon: FileCheck2, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/admin/taxonomy', label: 'Taxonomy & Tags', icon: Tag, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/admin/storage', label: 'Storage & Integrity (MinIO)', icon: HardDrive, role: 'ROLE_SUPER_ADMIN' as UserRole },
+    { href: '/admin/ocr', label: 'OCR Queue', icon: ScanLine, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/admin/reports', label: 'Usage & Stale Reports', icon: BarChart2, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/admin/security', label: 'Security Alerts', icon: ShieldAlert, role: 'ROLE_SUPER_ADMIN' as UserRole },
+    { href: '/admin/approvals', label: 'Approval Workflows', icon: GitPullRequestArrow, role: 'ROLE_ADMIN' as UserRole },
+    { href: '/admin/settings', label: 'System Settings', icon: Settings, role: 'ROLE_SUPER_ADMIN' as UserRole },
   ];
 
   const isAdmin = hasRole(userRoles, 'ROLE_ADMIN');
@@ -270,11 +270,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
         {/* User identity strip */}
         {user && (
           <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
-            <div className="w-7 h-7 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
+            <div className={`w-7 h-7 rounded-full text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs ${userRoles.includes('ROLE_SUPER_ADMIN') ? 'bg-amber-600' : 'bg-blue-700'}`}>
               {userInitials}
             </div>
-            <div className="min-w-0">
-              <div className="text-slate-900 font-bold truncate text-xs">{user.fullName || user.username}</div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-slate-900 font-bold truncate text-xs">{user.fullName || user.username}</span>
+                {userRoles.includes('ROLE_SUPER_ADMIN') ? (
+                  <span className="text-[8px] font-black px-1.5 py-0.5 bg-amber-500 text-white rounded font-mono uppercase tracking-wider shrink-0">
+                    SUPER ADMIN
+                  </span>
+                ) : userRoles.includes('ROLE_ADMIN') ? (
+                  <span className="text-[8px] font-bold px-1.5 py-0.5 bg-blue-600 text-white rounded font-mono uppercase tracking-wider shrink-0">
+                    ADMIN
+                  </span>
+                ) : null}
+              </div>
               <div className="text-[10px] text-slate-500 truncate font-medium">
                 {user.department || user.email}
               </div>

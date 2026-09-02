@@ -41,6 +41,7 @@ export default function CreateArticlePage() {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Engineering & Infrastructure');
   const [knowledgeType, setKnowledgeType] = useState('SOP');
+  const [customKnowledgeType, setCustomKnowledgeType] = useState('');
   const [confidentialityLevel, setConfidentialityLevel] = useState('INTERNAL');
   const [reviewFrequencyDays, setReviewFrequencyDays] = useState(365);
   const [executiveSummary, setExecutiveSummary] = useState('');
@@ -62,6 +63,7 @@ export default function CreateArticlePage() {
     { label: 'Article', value: 'Article' },
     { label: 'Guide', value: 'Guide' },
     { label: 'Troubleshooting', value: 'Troubleshooting' },
+    { label: '+ Other (Custom)...', value: 'OTHER' },
   ]);
 
   useEffect(() => {
@@ -76,13 +78,13 @@ export default function CreateArticlePage() {
           }));
           setCategoryOptions(opts);
           setKnowledgeTypeOptions((prev) => {
-            const combined = [...prev];
+            const builtIns = prev.filter((p) => p.value !== 'OTHER');
             opts.forEach((o: { label: string; value: string }) => {
-              if (!combined.some((c) => c.value.toLowerCase() === o.value.toLowerCase())) {
-                combined.push(o);
+              if (!builtIns.some((c) => c.value.toLowerCase() === o.value.toLowerCase())) {
+                builtIns.push(o);
               }
             });
-            return combined;
+            return [...builtIns, { label: '+ Other (Custom)...', value: 'OTHER' }];
           });
           setCategory((prev) => {
             if (!prev || !opts.some((o: { label: string; value: string }) => o.value === prev)) {
@@ -155,13 +157,22 @@ export default function CreateArticlePage() {
       setErrorMessage('Article title is required.');
       return;
     }
+    const effectiveKnowledgeType = knowledgeType === 'OTHER'
+      ? customKnowledgeType.trim()
+      : knowledgeType;
+
+    if (knowledgeType === 'OTHER' && !effectiveKnowledgeType) {
+      setErrorMessage('Please enter a name for the custom knowledge type.');
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
       await kmsApi.documents.createArticle({
         title: title.trim(),
         category,
-        knowledgeType,
+        knowledgeType: effectiveKnowledgeType || 'Article',
         confidentialityLevel,
         reviewFrequencyDays,
         executiveSummary,
@@ -254,9 +265,25 @@ export default function CreateArticlePage() {
                   <Select
                     options={knowledgeTypeOptions}
                     value={knowledgeType}
-                    onChange={(e) => setKnowledgeType(e.target.value)}
+                    onChange={(e) => {
+                      setKnowledgeType(e.target.value);
+                      if (e.target.value !== 'OTHER') {
+                        setCustomKnowledgeType('');
+                      }
+                    }}
                     className="w-full text-xs"
                   />
+                  {knowledgeType === 'OTHER' && (
+                    <div className="mt-2 animate-in fade-in duration-200">
+                      <Input
+                        placeholder="Enter custom knowledge type (e.g. Runbook, Case Study)..."
+                        value={customKnowledgeType}
+                        onChange={(e) => setCustomKnowledgeType(e.target.value)}
+                        className="w-full text-xs"
+                        autoFocus
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 

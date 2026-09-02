@@ -38,15 +38,18 @@ public class UserController {
                     return userRepository.save(u);
                 });
 
-        List<String> roles = auth != null
+        List<String> roles = new java.util.ArrayList<>(auth != null
                 ? auth.getAuthorities().stream().map(org.springframework.security.core.GrantedAuthority::getAuthority).filter(r -> r.startsWith("ROLE_")).toList()
-                : List.of();
+                : List.of());
+        if (user.getRoleName() != null && !roles.contains(user.getRoleName())) {
+            roles.add(user.getRoleName());
+        }
 
         return ResponseEntity.ok(Map.of(
                 "id", user.getId().toString(),
                 "username", user.getUsername(),
                 "email", user.getEmail(),
-                "fullName", user.getUsername(),
+                "fullName", user.getFullName() != null ? user.getFullName() : user.getUsername(),
                 "department", user.getDepartment() != null ? user.getDepartment().getName() : "IT Security",
                 "roles", roles
         ));

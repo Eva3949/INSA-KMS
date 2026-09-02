@@ -9,6 +9,7 @@ import com.enterprise.kms.service.ShareLinkService;
 import com.enterprise.kms.repository.DocumentCommentRepository;
 import com.enterprise.kms.repository.DocumentFavoriteRepository;
 import com.enterprise.kms.repository.DocumentLockRepository;
+import com.enterprise.kms.entity.DocumentShare;
 import com.enterprise.kms.entity.Subscription;
 import com.enterprise.kms.entity.User;
 import com.enterprise.kms.repository.DocumentRepository;
@@ -608,27 +609,32 @@ public class DocumentController {
     // ===== Shared With Me =====
 
     @GetMapping("/shared-with-me")
-    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
-    public ResponseEntity<java.util.List<java.util.Map<String, Object>>> getSharedWithMe() {
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN', 'ROLE_SUPER_ADMIN')")
+    public ResponseEntity<List<Map<String, Object>>> getSharedWithMe() {
         String username = SecurityUtils.getCurrentUsername();
-        com.enterprise.kms.entity.User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new org.springframework.web.server.ResponseStatusException(
-                        org.springframework.http.HttpStatus.UNAUTHORIZED, "User not found"));
-        java.util.List<com.enterprise.kms.entity.DocumentShare> shares =
-                documentShareRepository.findByGrantedToUserId(user.getId());
-        java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
-        for (com.enterprise.kms.entity.DocumentShare share : shares) {
-            com.enterprise.kms.entity.Document d = share.getDocument();
-            if (d == null || Boolean.TRUE.equals(d.getIsDeleted()) || !"PUBLISHED".equals(d.getStatus())) {
+        String email = SecurityUtils.getCurrentUserEmail();
+        User user = userRepository.findByUsername(username)
+                .or(() -> email != null ? userRepository.findByEmail(email) : java.util.Optional.empty())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
+
+        Map<UUID, Map<String, Object>> resultMap = new java.util.LinkedHashMap<>();
+
+        // 1. Direct DocumentShare records
+        List<DocumentShare> shares = documentShareRepository.findByGrantedToUserId(user.getId());
+        for (DocumentShare share : shares) {
+            Document d = share.getDocument();
+            if (d == null || Boolean.TRUE.equals(d.getIsDeleted())) {
                 continue;
             }
-            java.util.Map<String, Object> row = documentService.toResponse(d);
+            Map<String, Object> row = documentService.toResponse(d);
             row.put("shareId", share.getId());
             row.put("permissionLevel", share.getPermissionLevel());
             row.put("sharedAt", share.getCreatedAt());
-            result.add(row);
+            row.put("sharedBy", d.getAuthor() != null ? d.getAuthor().getUsername() : "System");
+            resultMap.put(d.getId(), row);
         }
-        return ResponseEntity.ok(result);
+
+        return ResponseEntity.ok(new java.util.ArrayList<>(resultMap.values()));
     }
 
     // ===== FR-26: Subscriptions =====

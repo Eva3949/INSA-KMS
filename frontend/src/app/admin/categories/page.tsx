@@ -1,8 +1,14 @@
 'use client';
 
-import React from 'react';
-import AdminDocumentTypesPage from '../document-types/page';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function AdminCategoriesPage() {
-  return <AdminDocumentTypesPage />;
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/admin/document-types');
+  }, [router]);
+
+  return null;
 }

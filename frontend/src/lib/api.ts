@@ -66,7 +66,14 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}, isRetry 
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`API Error [${response.status}]: ${errorText || response.statusText}`);
+    let errorMsg = errorText || response.statusText;
+    try {
+      const parsed = JSON.parse(errorText);
+      if (parsed.message) errorMsg = parsed.message;
+      else if (parsed.error_description) errorMsg = parsed.error_description;
+      else if (parsed.error) errorMsg = parsed.error;
+    } catch {}
+    throw new Error(errorMsg);
   }
 
   // Return empty response for 204 No Content

@@ -1,4 +1,5 @@
 export type UserRole = 
+  | 'ROLE_SUPER_ADMIN'
   | 'ROLE_ADMIN' 
   | 'ROLE_CONTENT_OWNER' 
   | 'ROLE_CONTRIBUTOR' 
@@ -16,8 +17,22 @@ export interface UserContext {
 
 export function hasRole(userRoles: UserRole[], requiredRole: UserRole): boolean {
   if (!userRoles || userRoles.length === 0) return false;
-  if (userRoles.includes('ROLE_ADMIN')) return true;
+
+  // ROLE_SUPER_ADMIN has all access
+  if (userRoles.includes('ROLE_SUPER_ADMIN')) return true;
+
+  // Exact match
   if (userRoles.includes(requiredRole)) return true;
+
+  // Only ROLE_SUPER_ADMIN can access ROLE_SUPER_ADMIN
+  if (requiredRole === 'ROLE_SUPER_ADMIN') {
+    return false;
+  }
+
+  // Standard Admin (ROLE_ADMIN) access
+  if (userRoles.includes('ROLE_ADMIN')) {
+    return true;
+  }
 
   // ROLE_VIEWER is inherited by all authenticated roles
   if (requiredRole === 'ROLE_VIEWER') {
