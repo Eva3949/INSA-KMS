@@ -2,8 +2,6 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/a
 const KEYCLOAK_URL = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080';
 const REALM = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'kms-realm';
 const CLIENT_ID = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'kms-frontend-client';
-<<<<<<< HEAD
-=======
 
 function isJwtExpired(token: string): boolean {
   try {
@@ -58,7 +56,6 @@ async function getOrRefreshAccessToken(): Promise<string | null> {
   }
   return await refreshAccessToken();
 }
->>>>>>> 19ed58f (Update Blog and Discussion INSA KMS project)
 
 async function trySilentRefresh(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
@@ -112,35 +109,11 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}, isRetry 
     },
   });
 
-<<<<<<< HEAD
-  if (response.status === 401 && !isRetry && typeof window !== 'undefined') {
-    const refreshedToken = await trySilentRefresh();
+  if (response.status === 401 && !isRetry && !isAuthEndpoint && typeof window !== 'undefined') {
+    const refreshedToken = await refreshAccessToken();
     if (refreshedToken) {
       return fetchApi<T>(endpoint, options, true);
-=======
-  // If 401 occurs and not an auth endpoint, try silent token refresh once and retry request
-  if (response.status === 401 && !isAuthEndpoint && typeof window !== 'undefined') {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        ...options,
-        headers: {
-          ...defaultHeaders,
-          'Authorization': `Bearer ${newToken}`,
-          ...options.headers,
-        },
-      });
     }
-  }
-
-  if (!response.ok) {
-    if (response.status === 401 && typeof window !== 'undefined') {
-      sessionStorage.removeItem('kms_access_token');
-      sessionStorage.removeItem('kms_refresh_token');
-      document.cookie = 'kms_auth_present=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
->>>>>>> 19ed58f (Update Blog and Discussion INSA KMS project)
-    }
-    // Refresh failed or no refresh token
     sessionStorage.removeItem('kms_access_token');
     sessionStorage.removeItem('kms_refresh_token');
     document.cookie = 'kms_auth_present=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
@@ -306,6 +279,7 @@ export const kmsApi = {
       body: JSON.stringify(payload),
     }),
     desktopOpen: (id: string) => fetchApi<{ documentId: string; fileName: string; extension: string; protocolUri: string; downloadUrl: string; openMethod: string }>(`/documents/${id}/desktop-open`),
+    getTextContent: (id: string) => fetchApi<{ fileName: string; paragraphs: string[] }>(`/documents/${id}/text`),
     desktopCheckIn: async (id: string, formData: FormData) => {
       const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
       const headers: Record<string, string> = {};
@@ -600,7 +574,6 @@ export const kmsApi = {
       }),
   },
 
-<<<<<<< HEAD
   // Knowledge Transfer
   knowledgeTransfer: {
     listCases: (params?: { employeeId?: string; managerId?: string; successorId?: string; departmentId?: string; status?: string; search?: string; page?: number; size?: number; sort?: string }) => {
@@ -695,7 +668,8 @@ export const kmsApi = {
       ),
     markRead: (id: string) => fetchApi<void>(`/notifications/${id}/read`, { method: 'PUT' }),
     markAllRead: () => fetchApi<void>('/notifications/read-all', { method: 'PUT' }),
-=======
+  },
+
   // Blogs
   blogs: {
     getPublished: (page = 0, size = 10, search?: string, category?: string) => {
@@ -748,7 +722,6 @@ export const kmsApi = {
       fetchApi<any>(`/discussions/${topicId}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
     deleteTopic: (topicId: string) => fetchApi<void>(`/discussions/${topicId}`, { method: 'DELETE' }),
     deleteReply: (topicId: string, replyId: string) => fetchApi<void>(`/discussions/${topicId}/replies/${replyId}`, { method: 'DELETE' }),
->>>>>>> 19ed58f (Update Blog and Discussion INSA KMS project)
   },
 };
 

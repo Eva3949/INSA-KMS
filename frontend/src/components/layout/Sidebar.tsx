@@ -27,13 +27,9 @@ import {
   KeyRound,
   ScanLine,
   GitPullRequestArrow,
-<<<<<<< HEAD
-  X
-=======
-  ScanLine,
+  X,
   BookOpen,
   MessageSquare
->>>>>>> 19ed58f (Update Blog and Discussion INSA KMS project)
 } from 'lucide-react';
 import { UserRole, hasRole } from '@/src/lib/auth';
 import { AuthUser } from '@/src/lib/auth-context';

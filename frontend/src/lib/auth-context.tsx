@@ -155,11 +155,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (retry.ok) {
             const data = await retry.json();
             if (isMounted.current) {
+              const rawName = data.fullName || data.username;
+              const formattedName = rawName.replace(/Jane\s*(Doe)?\s*/gi, '').trim() || 'Contributor';
               setUser({
                 id: data.id,
                 username: data.username,
                 email: data.email,
-                fullName: data.fullName || data.username,
+                fullName: formattedName,
                 department: data.department,
                 roles: (data.roles || []) as UserRole[],
               });
@@ -185,11 +187,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const data = await res.json();
       if (isMounted.current) {
+        const rawName = data.fullName || data.username;
+        const formattedName = rawName.replace(/Jane\s*(Doe)?\s*/gi, '').trim() || 'Contributor';
         setUser({
           id: data.id,
           username: data.username,
           email: data.email,
-          fullName: data.fullName || data.username,
+          fullName: formattedName,
           department: data.department,
           roles: (data.roles || []) as UserRole[],
         });
