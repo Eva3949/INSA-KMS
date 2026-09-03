@@ -1,131 +1,126 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { AppShell } from '@/src/components/layout/AppShell';
-import { Breadcrumb } from '@/src/components/ui/Breadcrumb';
-import { Button } from '@/src/components/ui/Button';
-import { Badge } from '@/src/components/ui/Badge';
-import { 
-  MessageSquare, 
-  User, 
-  Calendar, 
-  Eye, 
-  Lock, 
-  Unlock, 
-  Trash2, 
-  CornerDownRight, 
-  Send,
-  ArrowLeft 
-} from 'lucide-react';
+import { LoadingState, ErrorState } from '@/src/components/ui/States';
 import { kmsApi } from '@/src/lib/api';
 import { useAuth } from '@/src/lib/auth-context';
-import { hasRole } from '@/src/lib/auth';
+import { DiscussionHeader } from '@/src/components/discussions/DiscussionHeader';
+import { MessageBubble, ChatMessage } from '@/src/components/discussions/MessageBubble';
+import { MessageComposer } from '@/src/components/discussions/MessageComposer';
+import { DateSeparator } from '@/src/components/discussions/DateSeparator';
+import { AlertTriangle, MessageSquare } from 'lucide-react';
 
 export default function DiscussionDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
-  const id = params.id as string;
+  const topicId = params?.id as string;
 
   const [topic, setTopic] = useState<any>(null);
-  const [replies, setReplies] = useState<any[]>([]);
+  const [replyingToMessage, setReplyingToMessage] = useState<ChatMessage | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submittingReply, setSubmittingReply] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [replyText, setReplyText] = useState('');
-  const [parentReplyId, setParentReplyId] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  const fetchTopicAndReplies = async () => {
+  const fetchTopicDetail = useCallback(async () => {
+    if (!topicId) return;
     setLoading(true);
     setError(null);
     try {
-      const [tData, rData] = await Promise.all([
-        kmsApi.discussions.getById(id),
-        kmsApi.discussions.getReplies(id),
-      ]);
-      setTopic(tData);
-      setReplies(rData || []);
+      const data = await kmsApi.discussions.getTopicDetail(topicId);
+      setTopic(data);
     } catch (err: any) {
-      setError(err.message || 'Failed to load discussion topic.');
+      setError(err.message || 'Failed to load discussion topic');
     } finally {
       setLoading(false);
     }
-  };
+  }, [topicId]);
 
   useEffect(() => {
-    if (id) fetchTopicAndReplies();
-  }, [id]);
+    fetchTopicDetail();
+  }, [fetchTopicDetail]);
 
-  const isAdmin = hasRole(user?.roles || [], 'ROLE_ADMIN');
-  const isAuthor = user?.username && topic?.authorName && user.username.toLowerCase() === topic.authorName.toLowerCase();
-  const canModifyTopic = isAdmin || isAuthor;
+  // Scroll to bottom when messages finish loading or update
+  useEffect(() => {
+    if (!loading && topic) {
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  }, [loading, topic?.replies?.length]);
 
   const handleToggleStatus = async () => {
     if (!topic) return;
-    const nextStatus = topic.status === 'OPEN' ? 'CLOSED' : 'OPEN';
-    setActionLoading(true);
+    const newStatus = topic.status === 'OPEN' ? 'CLOSED' : 'OPEN';
     try {
-      const updated = await kmsApi.discussions.updateStatus(id, nextStatus);
-      setTopic(updated);
-      if (nextStatus === 'CLOSED') {
-        router.push('/discussions');
-      }
+      const updated = await kmsApi.discussions.setStatus(topic.id, newStatus);
+      setTopic((prev: any) => ({ ...prev, status: updated.status }));
     } catch (err: any) {
-      alert(err.message || 'Status update failed.');
-    } finally {
-      setActionLoading(false);
+      alert(err.message || 'Failed to update topic status');
     }
   };
 
   const handleDeleteTopic = async () => {
-    if (!confirm('Are you sure you want to delete this discussion topic?')) return;
-    setActionLoading(true);
+    if (!topic || !confirm('Are you sure you want to delete this topic and all replies?')) return;
     try {
-      await kmsApi.discussions.deleteTopic(id);
+      await kmsApi.discussions.deleteTopic(topic.id);
       router.push('/discussions');
     } catch (err: any) {
-      alert(err.message || 'Delete failed.');
-      setActionLoading(false);
+      alert(err.message || 'Failed to delete topic');
     }
   };
 
-  const handleSendReply = async () => {
-    if (!replyText.trim()) return;
-    setActionLoading(true);
+  const handleSendReply = async (content: string, parentReplyId?: string) => {
+    if (!content.trim() || !topic) return;
+
+    if (topic.status === 'CLOSED') {
+      alert('Cannot reply to a closed discussion topic.');
+      return;
+    }
+
+    setSubmittingReply(true);
     try {
-      await kmsApi.discussions.createReply(id, {
-        content: replyText.trim(),
+      await kmsApi.discussions.addReply(topicId, {
+        content: content.trim(),
         parentReplyId: parentReplyId || undefined,
       });
-      setReplyText('');
-      setParentReplyId(null);
-      fetchTopicAndReplies();
+      setReplyingToMessage(null);
+
+      // Refresh topic messages
+      const updatedTopic = await kmsApi.discussions.getTopicDetail(topicId);
+      setTopic(updatedTopic);
+
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
     } catch (err: any) {
-      alert(err.message || 'Failed to post reply.');
+      alert(err.message || 'Failed to submit reply');
+      throw err;
     } finally {
-      setActionLoading(false);
+      setSubmittingReply(false);
     }
   };
 
   const handleDeleteReply = async (replyId: string) => {
-    if (!confirm('Delete this reply?')) return;
+    if (!confirm('Are you sure you want to delete this reply?')) return;
     try {
-      await kmsApi.discussions.deleteReply(replyId);
-      fetchTopicAndReplies();
+      await kmsApi.discussions.deleteReply(topicId, replyId);
+      const updatedTopic = await kmsApi.discussions.getTopicDetail(topicId);
+      setTopic(updatedTopic);
     } catch (err: any) {
-      alert(err.message || 'Failed to delete reply.');
+      alert(err.message || 'Failed to delete reply');
     }
   };
 
   if (loading) {
     return (
       <AppShell>
-        <div className="text-center py-20">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent" />
-        </div>
+        <LoadingState message="Loading Telegram conversation..." />
       </AppShell>
     );
   }
@@ -133,222 +128,110 @@ export default function DiscussionDetailPage() {
   if (error || !topic) {
     return (
       <AppShell>
-        <div className="max-w-3xl mx-auto py-12 text-center space-y-4">
-          <p className="text-rose-600 text-sm font-semibold">{error || 'Topic not found.'}</p>
-          <Link href="/discussions">
-            <Button variant="outline" size="sm" icon={<ArrowLeft className="w-4 h-4" />}>
-              Back to Discussions
-            </Button>
-          </Link>
-        </div>
+        <ErrorState message={error || 'Topic not found'} onRetry={fetchTopicDetail} />
       </AppShell>
     );
   }
 
-  // Separate top-level replies and sub-replies
-  const topLevelReplies = replies.filter((r) => !r.parentReplyId);
-  const childRepliesMap = replies.reduce((acc: any, r: any) => {
-    if (r.parentReplyId) {
-      if (!acc[r.parentReplyId]) acc[r.parentReplyId] = [];
-      acc[r.parentReplyId].push(r);
-    }
-    return acc;
-  }, {});
+  const currentUsername = user?.username || '';
+  const isAuthorOrAdmin = (topic.author === currentUsername && currentUsername !== '') || Boolean(user?.roles?.includes('ROLE_ADMIN'));
+  const isClosed = topic.status === 'CLOSED';
+
+  // Construct complete chat message list:
+  // Initial topic post is message #0 from the topic author
+  const topicOriginMessage: ChatMessage = {
+    id: `topic-${topic.id}`,
+    topicId: topic.id,
+    content: topic.description,
+    author: topic.author,
+    authorId: topic.authorId,
+    createdAt: topic.createdAt,
+    isTopicOrigin: true,
+    isRead: topic.isRead ?? false,
+  };
+
+  const replyMessages: ChatMessage[] = (topic.replies || []).map((r: any) => ({
+    id: r.id,
+    topicId: topic.id,
+    parentReplyId: r.parentReplyId,
+    content: r.content,
+    author: r.author,
+    authorId: r.authorId,
+    createdAt: r.createdAt,
+    isRead: r.isRead ?? false,
+  }));
+
+  const allMessages: ChatMessage[] = [topicOriginMessage, ...replyMessages].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  const getParentMessage = (parentId?: string | null): ChatMessage | null => {
+    if (!parentId) return null;
+    return allMessages.find((m) => m.id === parentId) || null;
+  };
 
   return (
     <AppShell>
-      <div className="space-y-6 max-w-4xl mx-auto pb-12">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-          <div>
-            <Breadcrumb items={[{ label: 'Discussions', href: '/discussions' }, { label: topic.title }]} />
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight mt-1 leading-snug">
-              {topic.title}
-            </h1>
-          </div>
+      <div className="flex flex-col h-[calc(100vh-4rem)] bg-[#eef4f8] -m-4 sm:-m-6 overflow-hidden">
+        {/* Telegram Header */}
+        <DiscussionHeader
+          topic={topic}
+          isAuthorOrAdmin={isAuthorOrAdmin}
+          onToggleStatus={handleToggleStatus}
+          onDeleteTopic={handleDeleteTopic}
+        />
 
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              icon={<ArrowLeft className="w-4 h-4" />}
-              onClick={() => router.push('/discussions')}
-            >
-              Back to Discussions
-            </Button>
-            {canModifyTopic && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={topic.status === 'OPEN' ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                  disabled={actionLoading}
-                  onClick={handleToggleStatus}
-                >
-                  {topic.status === 'OPEN' ? 'Close Topic' : 'Reopen Topic'}
-                </Button>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  icon={<Trash2 className="w-4 h-4" />}
-                  disabled={actionLoading}
-                  onClick={handleDeleteTopic}
-                >
-                  Delete Topic
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
+        {/* Telegram Chat Conversation Area */}
+        <div
+          ref={chatContainerRef}
+          className="flex-1 overflow-y-auto px-4 py-4 sm:px-8 space-y-2 bg-[#eef4f8] bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:20px_20px]"
+        >
+          <div className="max-w-4xl mx-auto flex flex-col justify-end min-h-full pb-2">
+            {allMessages.map((msg, index) => {
+              const isOutgoing = msg.author === currentUsername;
+              const parentMsg = getParentMessage(msg.parentReplyId);
 
-        {/* Topic Body */}
-        <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-xs space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-3">
-              <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                <User className="w-4 h-4 text-blue-600" />
-                {topic.authorName || 'Anonymous'}
-              </span>
-              <span className="text-slate-400">
-                {new Date(topic.createdAt).toLocaleString()}
-              </span>
-            </div>
+              // Message is considered read if marked as read by backend view tracking OR if another user replied later in thread
+              const isRead = Boolean(msg.isRead) || allMessages.slice(index + 1).some((m) => m.author !== msg.author);
 
-            <div className="flex items-center gap-3">
-              <Badge label={topic.status} variant={topic.status === 'OPEN' ? 'green' : 'slate'} />
-              <span className="text-slate-500 flex items-center gap-1">
-                <Eye className="w-4 h-4" />
-                {topic.viewsCount || 0} views
-              </span>
-            </div>
-          </div>
+              // Date separator check
+              const showDateSeparator =
+                index === 0 ||
+                new Date(msg.createdAt).toDateString() !==
+                  new Date(allMessages[index - 1].createdAt).toDateString();
 
-          <div className="text-xs text-slate-800 whitespace-pre-wrap leading-relaxed">
-            {topic.description}
-          </div>
-        </div>
+              return (
+                <React.Fragment key={msg.id}>
+                  {showDateSeparator && <DateSeparator dateString={msg.createdAt} />}
 
-        {/* Threaded Replies Section */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-blue-600" />
-            Replies ({replies.length})
-          </h3>
-
-          {topLevelReplies.length === 0 ? (
-            <div className="bg-white p-6 rounded-lg border border-slate-200 text-center text-xs text-slate-500">
-              No replies yet. Be the first to join the conversation!
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {topLevelReplies.map((r) => (
-                <div key={r.id} className="bg-white p-5 rounded-lg border border-slate-200 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between text-xs border-b border-slate-100 pb-2">
-                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-500" />
-                      {r.authorName || 'Anonymous'}
-                    </span>
-                    <div className="flex items-center gap-3 text-slate-400">
-                      <span>{new Date(r.createdAt).toLocaleString()}</span>
-                      {(isAdmin || (user?.username && user.username.toLowerCase() === r.authorName?.toLowerCase())) && (
-                        <button
-                          onClick={() => handleDeleteReply(r.id)}
-                          className="text-rose-600 hover:underline"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
+                  <div id={`msg-${msg.id}`}>
+                    <MessageBubble
+                      message={msg}
+                      isOutgoing={isOutgoing}
+                      isRead={isRead}
+                      parentMessage={parentMsg}
+                      onReply={(targetMsg) => setReplyingToMessage(targetMsg)}
+                      onDelete={handleDeleteReply}
+                      canDelete={msg.author === currentUsername || Boolean(user?.roles?.includes('ROLE_ADMIN'))}
+                    />
                   </div>
+                </React.Fragment>
+              );
+            })}
 
-                  <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
-                    {r.content}
-                  </p>
-
-                  {topic.status === 'OPEN' && (
-                    <div className="pt-1">
-                      <button
-                        onClick={() => setParentReplyId(parentReplyId === r.id ? null : r.id)}
-                        className="text-[11px] font-semibold text-blue-600 hover:underline flex items-center gap-1"
-                      >
-                        <CornerDownRight className="w-3 h-3" />
-                        Reply to this comment
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Nested Child Replies */}
-                  {childRepliesMap[r.id] && childRepliesMap[r.id].length > 0 && (
-                    <div className="pl-6 pt-3 border-l-2 border-slate-100 space-y-3 mt-3">
-                      {childRepliesMap[r.id].map((child: any) => (
-                        <div key={child.id} className="bg-slate-50 p-3.5 rounded border border-slate-200/80 space-y-2">
-                          <div className="flex items-center justify-between text-[11px] text-slate-500">
-                            <span className="font-bold text-slate-800">{child.authorName || 'Anonymous'}</span>
-                            <div className="flex items-center gap-2">
-                              <span>{new Date(child.createdAt).toLocaleString()}</span>
-                              {(isAdmin || (user?.username && user.username.toLowerCase() === child.authorName?.toLowerCase())) && (
-                                <button
-                                  onClick={() => handleDeleteReply(child.id)}
-                                  className="text-rose-600 hover:underline"
-                                >
-                                  Delete
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
-                            {child.content}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Add Reply Input */}
-          {topic.status === 'OPEN' ? (
-            <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-xs space-y-3">
-              <h4 className="text-xs font-bold text-slate-800">
-                {parentReplyId ? 'Replying to comment...' : 'Leave a reply'}
-                {parentReplyId && (
-                  <button
-                    onClick={() => setParentReplyId(null)}
-                    className="text-[11px] text-rose-600 ml-2 hover:underline font-normal"
-                  >
-                    (Cancel inline reply)
-                  </button>
-                )}
-              </h4>
-
-              <textarea
-                rows={4}
-                placeholder="Write your response..."
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                className="w-full p-3 border border-slate-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 leading-relaxed"
-              />
-
-              <div className="flex justify-end">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={<Send className="w-3.5 h-3.5" />}
-                  disabled={actionLoading || !replyText.trim()}
-                  onClick={handleSendReply}
-                >
-                  {actionLoading ? 'Posting...' : 'Post Reply'}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 bg-slate-100 border border-slate-200 rounded-md text-xs text-slate-600 text-center font-medium">
-              This discussion topic has been closed. New replies are disabled.
-            </div>
-          )}
+            {/* Scroll Anchor */}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
+
+        {/* Telegram Composer */}
+        <MessageComposer
+          onSend={handleSendReply}
+          replyingTo={replyingToMessage}
+          onCancelReply={() => setReplyingToMessage(null)}
+          isClosed={isClosed}
+          submitting={submittingReply}
+        />
       </div>
     </AppShell>
   );

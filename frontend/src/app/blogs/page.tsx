@@ -1,262 +1,229 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { AppShell } from '@/src/components/layout/AppShell';
 import { Breadcrumb } from '@/src/components/ui/Breadcrumb';
 import { Button } from '@/src/components/ui/Button';
-import { Input, Select } from '@/src/components/ui/Input';
 import { Badge } from '@/src/components/ui/Badge';
-import { 
-  FileText, 
-  Plus, 
-  Search, 
-  Eye, 
-  Calendar, 
-  User, 
-  Tag, 
-  CheckCircle2, 
-  Clock, 
-  ArrowRight,
-  Sparkles
-} from 'lucide-react';
+import { LoadingState, ErrorState } from '@/src/components/ui/States';
+import { BookOpen, Plus, Search, Calendar, User, Edit, MessageSquare, ThumbsUp } from 'lucide-react';
 import { kmsApi } from '@/src/lib/api';
 import { useAuth } from '@/src/lib/auth-context';
-import { hasRole } from '@/src/lib/auth';
 
-export default function BlogsPage() {
+export default function BlogsFeedPage() {
+  const router = useRouter();
   const { user } = useAuth();
   const [blogs, setBlogs] = useState<any[]>([]);
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('ALL');
+  const [activeTab, setActiveTab] = useState<'all' | 'my'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('ALL');
-  const [status, setStatus] = useState('ALL');
-  const [page, setPage] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
+  const categories = ['ALL', 'General', 'Technology', 'Security', 'Architecture', 'Governance', 'News'];
 
-  const canCreate = hasRole(user?.roles || [], 'ROLE_CONTRIBUTOR') || hasRole(user?.roles || [], 'ROLE_ADMIN');
+  const canEditBlog = (blog: any) => {
+    if (!user || !blog) return false;
+    const authorUsername = (blog.author || blog.authorUsername || '').toLowerCase();
+    const currentUsername = (user.username || '').toLowerCase();
+    const isAuthor = Boolean(authorUsername && currentUsername && authorUsername === currentUsername);
+    const isAdmin = Boolean(
+      user.roles?.includes('ROLE_ADMIN' as any) ||
+      user.roles?.includes('ADMIN' as any) ||
+      user.roles?.includes('SYSTEM_ADMINISTRATOR' as any) ||
+      (user as any)?.isAdmin
+    );
+    return isAuthor || isAdmin;
+  };
 
-  const fetchBlogs = async () => {
+  const fetchBlogs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await kmsApi.blogs.list({
-        status: status !== 'ALL' ? status : undefined,
-        category: category !== 'ALL' ? category : undefined,
-        search: search.trim() || undefined,
-        page,
-        size: 9,
-      });
-      setBlogs(data.content || []);
-      setTotalPages(data.totalPages || 0);
+      let res;
+      if (activeTab === 'my') {
+        res = await kmsApi.blogs.getMyBlogs(0, 50);
+      } else {
+        res = await kmsApi.blogs.getPublished(0, 50, search, category !== 'ALL' ? category : undefined);
+      }
+      let fetched = res.content || [];
+      if (activeTab === 'my') {
+        if (search) {
+          fetched = fetched.filter((b: any) =>
+            b.title?.toLowerCase().includes(search.toLowerCase()) ||
+            b.content?.toLowerCase().includes(search.toLowerCase())
+          );
+        }
+        if (category !== 'ALL') {
+          fetched = fetched.filter((b: any) => b.category === category);
+        }
+      }
+      setBlogs(fetched);
     } catch (err: any) {
-      setError(err.message || 'Failed to load blog posts.');
+      setError(err.message || 'Failed to load blogs');
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, search, category]);
 
   useEffect(() => {
     fetchBlogs();
-  }, [status, category, page]);
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPage(0);
-    fetchBlogs();
-  };
+  }, [fetchBlogs]);
 
   return (
     <AppShell>
-      <div className="space-y-6 max-w-7xl mx-auto pb-12">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-          <div>
-            <Breadcrumb items={[{ label: 'Workspace' }, { label: 'Blogs & News' }]} />
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2 mt-1">
-              <Sparkles className="w-6 h-6 text-blue-600" />
-              INSA Blogs &amp; Enterprise News
-            </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Publish and discover internal news, technical blog posts, executive updates, and technical insights.
-            </p>
-          </div>
+      <div className="max-w-6xl mx-auto space-y-6">
+        <Breadcrumb items={[{ label: 'Workspace', href: '/' }, { label: 'Blogs' }]} />
 
-          {canCreate && (
-            <Link href="/blogs/create">
-              <Button variant="primary" size="sm" icon={<Plus className="w-4 h-4" />}>
-                Create Blog Post
-              </Button>
-            </Link>
-          )}
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-6 rounded-2xl shadow-md border border-slate-800">
+          <div>
+            <div className="flex items-center gap-2 text-blue-400 mb-1">
+              <BookOpen className="w-5 h-5" />
+              <span className="text-xs font-bold uppercase tracking-wider">Enterprise Knowledge</span>
+            </div>
+            <h1 className="text-2xl font-black tracking-tight">Blogs & Tech Insights</h1>
+            <p className="text-slate-300 text-xs mt-1">Discover, share, and publish organizational articles and technological insights.</p>
+          </div>
+          <Link href="/blogs/create">
+            <Button className="bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-2 shadow-sm">
+              <Plus className="w-4 h-4" />
+              Create Blog Post
+            </Button>
+          </Link>
         </div>
 
-        {/* Filter & Search Bar */}
-        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-xs flex flex-col md:flex-row gap-4 items-center justify-between">
-          <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center gap-2 w-full">
-            <div className="relative flex-1">
+        {/* Search & Header Actions */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${
+                activeTab === 'all'
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              All Published Blogs
+            </button>
+            <button
+              onClick={() => setActiveTab('my')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors ${
+                activeTab === 'my'
+                  ? 'bg-blue-600 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              My Blogs & Drafts
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="relative flex-1 sm:w-64">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-              <Input
-                placeholder="Search blogs by title or content..."
+              <input
+                type="text"
+                placeholder="Search blogs..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 text-xs w-full"
+                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-300 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <Button type="submit" variant="secondary" size="sm">
-              Search
-            </Button>
-          </form>
-
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <Select
-              options={[
-                { label: 'All Categories', value: 'ALL' },
-                { label: 'General', value: 'General' },
-                { label: 'Engineering', value: 'Engineering' },
-                { label: 'Security & Compliance', value: 'Security' },
-                { label: 'Company News', value: 'News' },
-              ]}
+            <select
               value={category}
-              onChange={(e) => {
-                setCategory(e.target.value);
-                setPage(0);
-              }}
-              className="text-xs w-36"
-            />
-
-            <Select
-              options={[
-                { label: 'All Statuses', value: 'ALL' },
-                { label: 'Published', value: 'PUBLISHED' },
-                { label: 'Drafts', value: 'DRAFT' },
-              ]}
-              value={status}
-              onChange={(e) => {
-                setStatus(e.target.value);
-                setPage(0);
-              }}
-              className="text-xs w-32"
-            />
+              onChange={(e) => setCategory(e.target.value)}
+              className="px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-white font-medium focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+            >
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>{cat === 'ALL' ? 'All Categories' : cat}</option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {error && (
-          <div className="p-4 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-md">
-            {error}
-          </div>
-        )}
-
-        {/* Grid of Blog Posts */}
+        {/* Content */}
         {loading ? (
-          <div className="text-center py-16 bg-white rounded-lg border border-slate-200">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mb-3" />
-            <p className="text-xs text-slate-500">Loading blog posts...</p>
-          </div>
+          <LoadingState message="Fetching blogs..." />
+        ) : error ? (
+          <ErrorState message={error} onRetry={fetchBlogs} />
         ) : blogs.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-lg border border-slate-200 space-y-3">
-            <FileText className="w-12 h-12 text-slate-300 mx-auto" />
+          <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+            <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <h3 className="text-sm font-bold text-slate-800">No blog posts found</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Be the first to share an update or article with the organization.
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              No blogs match your selection.
             </p>
-            {canCreate && (
-              <Link href="/blogs/create" className="inline-block pt-2">
-                <Button variant="primary" size="sm" icon={<Plus className="w-4 h-4" />}>
-                  Create Blog Post
-                </Button>
-              </Link>
-            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {blogs.map((blog) => (
-              <div
-                key={blog.id}
-                className="bg-white rounded-lg border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group"
-              >
-                {blog.coverImageUrl ? (
-                  <div className="h-40 bg-slate-100 overflow-hidden relative">
-                    <img
-                      src={blog.coverImageUrl}
-                      alt={blog.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div className="absolute top-3 right-3">
-                      <Badge label={blog.status} variant={blog.status === 'PUBLISHED' ? 'green' : 'amber'} />
+            {blogs.map((blog) => {
+              const editable = canEditBlog(blog);
+              return (
+                <div
+                  key={blog.id}
+                  className="bg-white rounded-xl border border-slate-200 shadow-2xs hover:shadow-md transition-all flex flex-col overflow-hidden group"
+                >
+                  {blog.coverImageUrl ? (
+                    <div className="h-44 w-full bg-slate-100 overflow-hidden relative">
+                      <img src={blog.coverImageUrl} alt={blog.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      <div className="absolute top-3 left-3">
+                        <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-slate-900/80 text-white backdrop-blur-xs rounded-md">
+                          {blog.category}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="h-28 bg-gradient-to-r from-blue-700 to-indigo-800 p-4 flex flex-col justify-between text-white relative">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold tracking-wider uppercase bg-white/20 px-2 py-0.5 rounded backdrop-blur-xs">
-                        {blog.category || 'General'}
+                  ) : (
+                    <div className="h-28 w-full bg-gradient-to-r from-blue-600 to-indigo-700 p-4 flex flex-col justify-between text-white relative">
+                      <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-white/20 backdrop-blur-xs rounded-md w-fit">
+                        {blog.category}
                       </span>
-                      <Badge label={blog.status} variant={blog.status === 'PUBLISHED' ? 'green' : 'amber'} />
                     </div>
-                    <FileText className="w-8 h-8 text-white/30 absolute bottom-3 right-3" />
-                  </div>
-                )}
+                  )}
 
-                <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
-                  <div className="space-y-2">
-                    <h3 className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2 text-sm leading-snug">
-                      <Link href={`/blogs/${blog.id}`}>{blog.title}</Link>
-                    </h3>
-                    <p className="text-xs text-slate-600 line-clamp-3 leading-relaxed">
-                      {blog.content?.replace(/[#*`_]/g, '') || ''}
-                    </p>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                    <div className="flex items-center gap-1.5 font-medium truncate max-w-[140px]">
-                      <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">{blog.authorName || 'Anonymous'}</span>
+                  <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge label={blog.status} variant={blog.status === 'PUBLISHED' ? 'green' : 'amber'} />
+                        <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(blog.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <h3 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors line-clamp-2">
+                        {blog.title}
+                      </h3>
+                      <p className="text-xs text-slate-600 mt-2 line-clamp-3 leading-relaxed">
+                        {blog.content.replace(/<[^>]*>?/gm, '')}
+                      </p>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="flex items-center gap-1">
-                        <Eye className="w-3.5 h-3.5 text-slate-400" />
-                        {blog.viewsCount || 0}
-                      </span>
-                      <Link
-                        href={`/blogs/${blog.id}`}
-                        className="text-blue-600 font-bold hover:underline flex items-center gap-0.5"
-                      >
-                        Read <ArrowRight className="w-3 h-3" />
-                      </Link>
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                        <User className="w-3.5 h-3.5 text-blue-600" />
+                        <span>{blog.author}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {/* Edit Button is visible ONLY to Creator or Admin */}
+                        {editable && (
+                          <Link href={`/blogs/${blog.id}/edit`}>
+                            <Button size="sm" variant="ghost" className="p-1 text-slate-500 hover:text-blue-600" title="Edit Post (Author/Admin Only)">
+                              <Edit className="w-3.5 h-3.5" />
+                            </Button>
+                          </Link>
+                        )}
+                        <Link href={`/blogs/${blog.id}`}>
+                          <Button size="sm" className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-3 py-1">
+                            Read Post
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page === 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-            >
-              Previous
-            </Button>
-            <span className="text-xs font-semibold text-slate-600">
-              Page {page + 1} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages - 1}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </Button>
+              );
+            })}
           </div>
         )}
       </div>

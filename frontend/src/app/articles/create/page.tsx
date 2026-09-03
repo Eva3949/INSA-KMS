@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/src/components/layout/AppShell';
 import { Breadcrumb } from '@/src/components/ui/Breadcrumb';
@@ -41,12 +41,61 @@ export default function CreateArticlePage() {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Engineering & Infrastructure');
   const [knowledgeType, setKnowledgeType] = useState('SOP');
+  const [customKnowledgeType, setCustomKnowledgeType] = useState('');
   const [confidentialityLevel, setConfidentialityLevel] = useState('INTERNAL');
   const [reviewFrequencyDays, setReviewFrequencyDays] = useState(365);
   const [executiveSummary, setExecutiveSummary] = useState('');
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>(['SOP', 'Production']);
   const [content, setContent] = useState('');
+
+  // Dynamic Document Categories & Types from Database
+  const [categoryOptions, setCategoryOptions] = useState<Array<{ label: string; value: string }>>([
+    { label: 'Engineering & Infrastructure', value: 'Engineering & Infrastructure' },
+    { label: 'Security Operations', value: 'Security Operations' },
+    { label: 'Compliance & Policy', value: 'Compliance & Policy' },
+    { label: 'Human Resources', value: 'Human Resources' },
+    { label: 'General Knowledge', value: 'General Knowledge' },
+  ]);
+  const [knowledgeTypeOptions, setKnowledgeTypeOptions] = useState<Array<{ label: string; value: string }>>([
+    { label: 'SOP', value: 'SOP' },
+    { label: 'Policy', value: 'Policy' },
+    { label: 'Article', value: 'Article' },
+    { label: 'Guide', value: 'Guide' },
+    { label: 'Troubleshooting', value: 'Troubleshooting' },
+    { label: '+ Other (Custom)...', value: 'OTHER' },
+  ]);
+
+  useEffect(() => {
+    kmsApi.documentTypes
+      .getActive()
+      .then((types) => {
+        const list = Array.isArray(types) ? types : (types as any)?.content || [];
+        if (list.length > 0) {
+          const opts = list.map((t: any) => ({
+            label: t.name,
+            value: t.name,
+          }));
+          setCategoryOptions(opts);
+          setKnowledgeTypeOptions((prev) => {
+            const builtIns = prev.filter((p) => p.value !== 'OTHER');
+            opts.forEach((o: { label: string; value: string }) => {
+              if (!builtIns.some((c) => c.value.toLowerCase() === o.value.toLowerCase())) {
+                builtIns.push(o);
+              }
+            });
+            return [...builtIns, { label: '+ Other (Custom)...', value: 'OTHER' }];
+          });
+          setCategory((prev) => {
+            if (!prev || !opts.some((o: { label: string; value: string }) => o.value === prev)) {
+              return opts[0].value;
+            }
+            return prev;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [editorMode, setEditorMode] = useState<'write' | 'preview' | 'split'>('write');
   const [requiredReviewer, setRequiredReviewer] = useState('Department leads');
@@ -108,13 +157,22 @@ export default function CreateArticlePage() {
       setErrorMessage('Article title is required.');
       return;
     }
+    const effectiveKnowledgeType = knowledgeType === 'OTHER'
+      ? customKnowledgeType.trim()
+      : knowledgeType;
+
+    if (knowledgeType === 'OTHER' && !effectiveKnowledgeType) {
+      setErrorMessage('Please enter a name for the custom knowledge type.');
+      return;
+    }
+
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
       await kmsApi.documents.createArticle({
         title: title.trim(),
         category,
-        knowledgeType,
+        knowledgeType: effectiveKnowledgeType || 'Article',
         confidentialityLevel,
         reviewFrequencyDays,
         executiveSummary,
@@ -195,13 +253,7 @@ export default function CreateArticlePage() {
                 <div>
                   <label className="block text-xs font-semibold text-kms-slate-700 mb-1">Category</label>
                   <Select
-                    options={[
-                      { label: 'Engineering & Infrastructure', value: 'Engineering & Infrastructure' },
-                      { label: 'Security Operations', value: 'Security Operations' },
-                      { label: 'Compliance & Policy', value: 'Compliance & Policy' },
-                      { label: 'Human Resources', value: 'Human Resources' },
-                      { label: 'General Knowledge', value: 'General Knowledge' },
-                    ]}
+                    options={categoryOptions}
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
                     className="w-full text-xs"
@@ -211,17 +263,27 @@ export default function CreateArticlePage() {
                 <div>
                   <label className="block text-xs font-semibold text-kms-slate-700 mb-1">Knowledge type</label>
                   <Select
-                    options={[
-                      { label: 'SOP', value: 'SOP' },
-                      { label: 'Policy', value: 'Policy' },
-                      { label: 'Article', value: 'Article' },
-                      { label: 'Guide', value: 'Guide' },
-                      { label: 'Troubleshooting', value: 'Troubleshooting' },
-                    ]}
+                    options={knowledgeTypeOptions}
                     value={knowledgeType}
-                    onChange={(e) => setKnowledgeType(e.target.value)}
+                    onChange={(e) => {
+                      setKnowledgeType(e.target.value);
+                      if (e.target.value !== 'OTHER') {
+                        setCustomKnowledgeType('');
+                      }
+                    }}
                     className="w-full text-xs"
                   />
+                  {knowledgeType === 'OTHER' && (
+                    <div className="mt-2 animate-in fade-in duration-200">
+                      <Input
+                        placeholder="Enter custom knowledge type (e.g. Runbook, Case Study)..."
+                        value={customKnowledgeType}
+                        onChange={(e) => setCustomKnowledgeType(e.target.value)}
+                        className="w-full text-xs"
+                        autoFocus
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 

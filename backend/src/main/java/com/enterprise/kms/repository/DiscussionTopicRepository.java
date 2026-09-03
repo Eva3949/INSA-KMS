@@ -12,13 +12,9 @@ import java.util.UUID;
 
 @Repository
 public interface DiscussionTopicRepository extends JpaRepository<DiscussionTopic, UUID> {
-
-    @Query("SELECT d FROM DiscussionTopic d WHERE " +
-           "(:status IS NULL OR d.status = :status) AND " +
-           "(:category IS NULL OR LOWER(d.category) = LOWER(:category)) AND " +
-           "(:search IS NULL OR LOWER(d.title) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(d.description) LIKE LOWER(CONCAT('%', :search, '%')))")
-    Page<DiscussionTopic> searchTopics(@Param("status") String status,
-                                       @Param("category") String category,
-                                       @Param("search") String search,
-                                       Pageable pageable);
+    @Query("SELECT t FROM DiscussionTopic t WHERE " +
+           "(:status IS NULL OR LOWER(t.status) = LOWER(CAST(:status AS string))) AND " +
+           "(:search IS NULL OR LOWER(t.title) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) OR LOWER(t.description) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))) " +
+           "ORDER BY t.updatedAt DESC, t.createdAt DESC")
+    Page<DiscussionTopic> searchTopics(@Param("search") String search, @Param("status") String status, Pageable pageable);
 }

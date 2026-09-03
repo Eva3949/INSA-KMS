@@ -20,133 +20,94 @@ public class BlogSchemaInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        log.info("Ensuring blog_posts and discussion tables exist with correct TEXT column types in PostgreSQL...");
-
         try {
-            // 1. Ensure blog_posts table exists
-            jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS blog_posts (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    title VARCHAR(255) NOT NULL,
-                    content TEXT NOT NULL,
-                    category VARCHAR(100) NOT NULL DEFAULT 'General',
-                    cover_image_url VARCHAR(500),
-                    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
-                    author_id UUID REFERENCES users(id) ON DELETE SET NULL,
-                    author_name VARCHAR(255) NOT NULL DEFAULT 'System User',
-                    views_count INT NOT NULL DEFAULT 0,
-                    published_at TIMESTAMP WITH TIME ZONE,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-            """);
-
-            // 2. Ensure discussion_topics table exists
-            jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS discussion_topics (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    title VARCHAR(255) NOT NULL,
-                    description TEXT NOT NULL,
-                    category VARCHAR(100) NOT NULL DEFAULT 'General',
-                    status VARCHAR(20) NOT NULL DEFAULT 'OPEN',
-                    author_id UUID REFERENCES users(id) ON DELETE SET NULL,
-                    author_name VARCHAR(255) NOT NULL DEFAULT 'System User',
-                    views_count INT NOT NULL DEFAULT 0,
-                    replies_count INT NOT NULL DEFAULT 0,
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-            """);
-
-            // 3. Ensure discussion_replies table exists
-            jdbcTemplate.execute("""
-                CREATE TABLE IF NOT EXISTS discussion_replies (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    topic_id UUID NOT NULL REFERENCES discussion_topics(id) ON DELETE CASCADE,
-                    parent_reply_id UUID REFERENCES discussion_replies(id) ON DELETE CASCADE,
-                    content TEXT NOT NULL,
-                    author_id UUID REFERENCES users(id) ON DELETE SET NULL,
-                    author_name VARCHAR(255) NOT NULL DEFAULT 'System User',
-                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-            """);
-
-            // 4. Force convert any legacy BYTEA or non-TEXT columns to TEXT / VARCHAR safely
-            String[] fixColumnTypeSqls = new String[]{
-                """
+            log.info("Verifying and enforcing TEXT column types for blogs and discussions...");
+            String sql = """
                 DO $$
                 BEGIN
                     IF EXISTS (
                         SELECT 1 FROM information_schema.columns 
-                        WHERE lower(table_name) = 'blog_posts' 
-                          AND lower(column_name) = 'content' 
-                          AND lower(data_type) != 'text'
+                        WHERE table_name = 'blogs' AND column_name = 'content' AND data_type = 'bytea'
                     ) THEN
-                        BEGIN
-                            ALTER TABLE blog_posts ALTER COLUMN content TYPE TEXT USING convert_from(content, 'UTF8');
-                        EXCEPTION WHEN OTHERS THEN
-                            BEGIN
-                                ALTER TABLE blog_posts ALTER COLUMN content TYPE TEXT USING encode(content, 'escape');
-                            EXCEPTION WHEN OTHERS THEN
-                                ALTER TABLE blog_posts ALTER COLUMN content TYPE TEXT USING content::text;
-                            END;
-                        END;
+                        ALTER TABLE blogs ALTER COLUMN content TYPE TEXT USING convert_from(content, 'UTF8');
                     END IF;
-                END $$;
-                """,
-                """
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE lower(table_name) = 'discussion_topics' 
-                          AND lower(column_name) = 'description' 
-                          AND lower(data_type) != 'text'
-                    ) THEN
-                        BEGIN
-                            ALTER TABLE discussion_topics ALTER COLUMN description TYPE TEXT USING convert_from(description, 'UTF8');
-                        EXCEPTION WHEN OTHERS THEN
-                            BEGIN
-                                ALTER TABLE discussion_topics ALTER COLUMN description TYPE TEXT USING encode(description, 'escape');
-                            EXCEPTION WHEN OTHERS THEN
-                                ALTER TABLE discussion_topics ALTER COLUMN description TYPE TEXT USING description::text;
-                            END;
-                        END;
-                    END IF;
-                END $$;
-                """,
-                """
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE lower(table_name) = 'discussion_replies' 
-                          AND lower(column_name) = 'content' 
-                          AND lower(data_type) != 'text'
-                    ) THEN
-                        BEGIN
-                            ALTER TABLE discussion_replies ALTER COLUMN content TYPE TEXT USING convert_from(content, 'UTF8');
-                        EXCEPTION WHEN OTHERS THEN
-                            BEGIN
-                                ALTER TABLE discussion_replies ALTER COLUMN content TYPE TEXT USING encode(content, 'escape');
-                            EXCEPTION WHEN OTHERS THEN
-                                ALTER TABLE discussion_replies ALTER COLUMN content TYPE TEXT USING encode(content, 'escape');
-                            END;
-                        END;
-                    END IF;
-                END $$;
-                """
-            };
 
-            for (String sql : fixColumnTypeSqls) {
-                jdbcTemplate.execute(sql);
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'blogs' AND column_name = 'title' AND data_type = 'bytea'
+                    ) THEN
+                        ALTER TABLE blogs ALTER COLUMN title TYPE VARCHAR(255) USING convert_from(title, 'UTF8');
+                    END IF;
+
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'blogs' AND column_name = 'category' AND data_type = 'bytea'
+                    ) THEN
+                        ALTER TABLE blogs ALTER COLUMN category TYPE VARCHAR(100) USING convert_from(category, 'UTF8');
+                    END IF;
+
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'blogs' AND column_name = 'status' AND data_type = 'bytea'
+                    ) THEN
+                        ALTER TABLE blogs ALTER COLUMN status TYPE VARCHAR(20) USING convert_from(status, 'UTF8');
+                    END IF;
+
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'blogs' AND column_name = 'author_username' AND data_type = 'bytea'
+                    ) THEN
+                        ALTER TABLE blogs ALTER COLUMN author_username TYPE VARCHAR(255) USING convert_from(author_username, 'UTF8');
+                    END IF;
+
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'discussion_topics' AND column_name = 'title' AND data_type = 'bytea'
+                    ) THEN
+                        ALTER TABLE discussion_topics ALTER COLUMN title TYPE VARCHAR(255) USING convert_from(title, 'UTF8');
+                    END IF;
+
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'discussion_topics' AND column_name = 'description' AND data_type = 'bytea'
+                    ) THEN
+                        ALTER TABLE discussion_topics ALTER COLUMN description TYPE TEXT USING convert_from(description, 'UTF8');
+                    END IF;
+
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'discussion_topics' AND column_name = 'status' AND data_type = 'bytea'
+                    ) THEN
+                        ALTER TABLE discussion_topics ALTER COLUMN status TYPE VARCHAR(20) USING convert_from(status, 'UTF8');
+                    END IF;
+
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'discussion_replies' AND column_name = 'content' AND data_type = 'bytea'
+                    ) THEN
+                        ALTER TABLE discussion_replies ALTER COLUMN content TYPE TEXT USING convert_from(content, 'UTF8');
+                    END IF;
+                END $$;
+            """;
+            jdbcTemplate.execute(sql);
+            log.info("Blog and Discussion schema types verified.");
+
+            var blogCols = jdbcTemplate.queryForList(
+                "SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = 'blogs' ORDER BY ordinal_position"
+            );
+            for (var col : blogCols) {
+                log.info("blogs column: {} | data_type: {} | udt_name: {}", col.get("column_name"), col.get("data_type"), col.get("udt_name"));
             }
+            log.info("Blog and Discussion schema types verified.");
 
-            log.info("Successfully verified and initialized blog & discussion database tables and column types.");
+            var columns = jdbcTemplate.queryForList(
+                "SELECT column_name, data_type, udt_name FROM information_schema.columns WHERE table_name = 'discussion_topics' ORDER BY ordinal_position"
+            );
+            for (var col : columns) {
+                log.info("discussion_topics column: {} | data_type: {} | udt_name: {}", col.get("column_name"), col.get("data_type"), col.get("udt_name"));
+            }
         } catch (Exception e) {
-            log.error("Failed to initialize blog/discussion schema: {}", e.getMessage(), e);
+            log.warn("Notice during Blog and Discussion schema type check: {}", e.getMessage());
         }
     }
 }
-

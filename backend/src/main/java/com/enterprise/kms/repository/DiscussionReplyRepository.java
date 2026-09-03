@@ -10,5 +10,5 @@ import java.util.UUID;
 @Repository
 public interface DiscussionReplyRepository extends JpaRepository<DiscussionReply, UUID> {
     List<DiscussionReply> findByTopicIdOrderByCreatedAtAsc(UUID topicId);
-    int countByTopicId(UUID topicId);
+    long countByTopicId(UUID topicId);
 }

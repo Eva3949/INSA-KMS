@@ -33,6 +33,14 @@
   "roles": {
     "realm": [
       {
+        "name": "ROLE_SUPER_ADMIN",
+        "description": "Super Administrator"
+      },
+      {
+        "name": "SUPER_ADMIN",
+        "description": "Super Administrator"
+      },
+      {
         "name": "ROLE_ADMIN",
         "description": "System Administrator"
       },
@@ -90,7 +98,7 @@
     {
       "username": "admin",
       "email": "admin@kms.internal",
-      "firstName": "System",
+      "firstName": "Super",
       "lastName": "Administrator",
       "enabled": true,
       "emailVerified": true,
@@ -102,9 +110,29 @@
         }
       ],
       "realmRoles": [
+        "ROLE_SUPER_ADMIN",
+        "SUPER_ADMIN",
         "ROLE_ADMIN",
         "ROLE_SYSTEM_ADMINISTRATOR",
         "SYSTEM_ADMINISTRATOR"
+      ]
+    },
+    {
+      "username": "admin_ops",
+      "email": "admin.ops@kms.internal",
+      "firstName": "Operations",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "adminops123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ROLE_ADMIN"
       ]
     },
     {
@@ -129,8 +157,8 @@
     {
       "username": "contributor",
       "email": "user@kms.internal",
-      "firstName": "Jane",
-      "lastName": "Contributor",
+      "firstName": "Contributor",
+      "lastName": "",
       "enabled": true,
       "emailVerified": true,
       "credentials": [

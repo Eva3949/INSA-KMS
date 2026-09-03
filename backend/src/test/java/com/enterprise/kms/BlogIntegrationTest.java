@@ -1,132 +1,134 @@
 package com.enterprise.kms;
 
 import com.enterprise.kms.controller.BlogController;
-import com.enterprise.kms.entity.BlogPost;
-import com.enterprise.kms.repository.BlogPostRepository;
+import com.enterprise.kms.entity.Blog;
+import com.enterprise.kms.repository.BlogRepository;
 import com.enterprise.kms.repository.UserRepository;
-import com.enterprise.kms.service.AuditService;
 import com.enterprise.kms.service.BlogService;
+import com.enterprise.kms.service.StorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+
+import com.enterprise.kms.service.NotificationService;
 
 class BlogIntegrationTest {
 
-    private BlogPostRepository blogPostRepository;
+    private BlogRepository blogRepository;
     private UserRepository userRepository;
-    private AuditService auditService;
+    private StorageService storageService;
+    private NotificationService notificationService;
     private BlogService blogService;
     private BlogController blogController;
 
     @BeforeEach
     void setUp() {
-        blogPostRepository = Mockito.mock(BlogPostRepository.class);
-        userRepository = Mockito.mock(UserRepository.class);
-        auditService = Mockito.mock(AuditService.class);
-
-        blogService = new BlogService(blogPostRepository, userRepository, auditService);
+        blogRepository = mock(BlogRepository.class);
+        userRepository = mock(UserRepository.class);
+        storageService = mock(StorageService.class);
+        notificationService = mock(NotificationService.class);
+        blogService = new BlogService(blogRepository, userRepository, storageService, notificationService);
         blogController = new BlogController(blogService);
     }
 
     @Test
-    @DisplayName("Blog Subsystem - Create, Get, Publish, Unpublish, and Delete Lifecycle")
-    void testBlogLifecycle() {
+    @DisplayName("Blog Lifecycle - Create Draft, Publish & View")
+    void testBlogCreatePublishAndView() {
         UUID blogId = UUID.randomUUID();
-        BlogPost post = new BlogPost();
-        post.setId(blogId);
-        post.setTitle("INSA Security Guidelines 2026");
-        post.setContent("Comprehensive operational security standards...");
-        post.setCategory("Security");
-        post.setStatus("DRAFT");
-        post.setAuthorName("admin.user");
+        Blog draftBlog = new Blog();
+        draftBlog.setId(blogId);
+        draftBlog.setTitle("KMS Security Best Practices");
+        draftBlog.setContent("Always enforce MFA and TLS.");
+        draftBlog.setCategory("Security");
+        draftBlog.setStatus("DRAFT");
+        draftBlog.setAuthorUsername("test.user");
 
-        when(blogPostRepository.save(any(BlogPost.class))).thenAnswer(invocation -> {
-            BlogPost saved = invocation.getArgument(0);
-            if (saved.getId() == null) saved.setId(blogId);
-            return saved;
-        });
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(post));
+        when(blogRepository.save(any(Blog.class))).thenReturn(draftBlog);
+        when(blogRepository.findById(blogId)).thenReturn(Optional.of(draftBlog));
 
-        Jwt mockJwt = Mockito.mock(Jwt.class);
-        when(mockJwt.getClaimAsString("preferred_username")).thenReturn("admin.user");
-        when(mockJwt.getClaim("realm_access")).thenReturn(Map.of("roles", List.of("ROLE_ADMIN")));
-
-        // 1. Create Blog
-        Map<String, Object> createReq = Map.of(
-                "title", "INSA Security Guidelines 2026",
-                "content", "Comprehensive operational security standards...",
+        // Create
+        Map<String, Object> req = Map.of(
+                "title", "KMS Security Best Practices",
+                "content", "Always enforce MFA and TLS.",
                 "category", "Security",
                 "status", "DRAFT"
         );
-        ResponseEntity<BlogPost> createRes = blogController.createBlog(createReq, mockJwt);
-        assertEquals(HttpStatus.OK, createRes.getStatusCode());
-        assertNotNull(createRes.getBody());
-        assertEquals("INSA Security Guidelines 2026", createRes.getBody().getTitle());
-        assertEquals("DRAFT", createRes.getBody().getStatus());
+        Blog created = blogService.createBlog(req, "test.user", false);
+        assertEquals("DRAFT", created.getStatus());
 
-        // 2. Publish Blog
-        ResponseEntity<BlogPost> publishRes = blogController.publishBlog(blogId, mockJwt);
-        assertEquals(HttpStatus.OK, publishRes.getStatusCode());
-        assertEquals("PUBLISHED", publishRes.getBody().getStatus());
-        assertNotNull(publishRes.getBody().getPublishedAt());
+        // Forbidden draft view for non-author non-admin
+        assertThrows(ResponseStatusException.class, () -> blogService.getBlogById(blogId, "other.user", false));
 
-        // 3. Unpublish Blog
-        ResponseEntity<BlogPost> unpublishRes = blogController.unpublishBlog(blogId, mockJwt);
-        assertEquals(HttpStatus.OK, unpublishRes.getStatusCode());
-        assertEquals("DRAFT", unpublishRes.getBody().getStatus());
+        // Allowed draft view for author
+        Map<String, Object> viewRes = blogService.getBlogById(blogId, "test.user", false);
+        assertEquals("KMS Security Best Practices", viewRes.get("title"));
 
-        // 4. Delete Blog
-        ResponseEntity<Void> deleteRes = blogController.deleteBlog(blogId, mockJwt);
-        assertEquals(HttpStatus.NO_CONTENT, deleteRes.getStatusCode());
-        verify(blogPostRepository, times(1)).delete(post);
-    }
-
-    @Test
-    @DisplayName("Blog Subsystem - Search and Filter Blogs")
-    void testSearchAndFilterBlogs() {
-        BlogPost p1 = new BlogPost();
-        p1.setId(UUID.randomUUID());
-        p1.setTitle("Architecture Review");
-        p1.setStatus("PUBLISHED");
-
-        when(blogPostRepository.searchBlogs(eq("PUBLISHED"), eq("Tech"), eq("Architecture"), any(PageRequest.class)))
-                .thenReturn(new PageImpl<>(List.of(p1)));
-
-        var res = blogController.listBlogs("PUBLISHED", "Tech", "Architecture", 0, 10, "createdAt,desc");
-        assertEquals(HttpStatus.OK, res.getStatusCode());
-        assertEquals(1, res.getBody().getTotalElements());
-        assertEquals("Architecture Review", res.getBody().getContent().get(0).getTitle());
-    }
-
-    @Test
-    @DisplayName("Blog Subsystem - Unauthorized Modification Check")
-    void testUnauthorizedModification() {
-        UUID blogId = UUID.randomUUID();
-        BlogPost post = new BlogPost();
-        post.setId(blogId);
-        post.setTitle("User Notes");
-        post.setAuthorName("original.author");
-
-        when(blogPostRepository.findById(blogId)).thenReturn(Optional.of(post));
-
-        Jwt otherUserJwt = Mockito.mock(Jwt.class);
-        when(otherUserJwt.getClaimAsString("preferred_username")).thenReturn("other.user");
-        when(otherUserJwt.getClaim("realm_access")).thenReturn(Map.of("roles", List.of("ROLE_CONTRIBUTOR")));
-
-        assertThrows(SecurityException.class, () -> {
-            blogController.updateBlog(blogId, Map.of("title", "Hacked Title"), otherUserJwt);
+        // Toggle Publish
+        when(blogRepository.save(any(Blog.class))).thenAnswer(i -> {
+            Blog b = i.getArgument(0);
+            b.setStatus("PUBLISHED");
+            return b;
         });
+        Blog published = blogService.togglePublishStatus(blogId, "test.user", false);
+        assertEquals("PUBLISHED", published.getStatus());
+    }
+
+    @Test
+    @DisplayName("Blog Security - Ownership Check On Edit and Delete")
+    void testBlogOwnershipEnforcement() {
+        UUID blogId = UUID.randomUUID();
+        Blog blog = new Blog();
+        blog.setId(blogId);
+        blog.setTitle("Author Blog");
+        blog.setContent("Original Content");
+        blog.setAuthorUsername("author.user");
+
+        when(blogRepository.findById(blogId)).thenReturn(Optional.of(blog));
+
+        // Other user attempts to update -> forbidden
+        Map<String, Object> updateReq = Map.of("title", "Hacked Title");
+        assertThrows(ResponseStatusException.class, () -> blogService.updateBlog(blogId, updateReq, "intruder.user", false));
+
+        // Other user attempts to delete -> forbidden
+        assertThrows(ResponseStatusException.class, () -> blogService.deleteBlog(blogId, "intruder.user", false));
+
+        // System Admin can update
+        when(blogRepository.save(any(Blog.class))).thenAnswer(i -> i.getArgument(0));
+        Blog updatedByAdmin = blogService.updateBlog(blogId, updateReq, "admin.user", true);
+        assertEquals("Hacked Title", updatedByAdmin.getTitle());
+    }
+
+    @Test
+    @DisplayName("Blog Search & Filter")
+    void testBlogSearchAndFilter() {
+        Blog b1 = new Blog();
+        b1.setId(UUID.randomUUID());
+        b1.setTitle("Architecture Guide");
+        b1.setContent("Spring Boot and Next.js guide");
+        b1.setCategory("Tech");
+        b1.setStatus("PUBLISHED");
+
+        Page<Blog> page = new PageImpl<>(List.of(b1));
+        when(blogRepository.searchPublishedBlogs(any(), any(), any()))
+                .thenReturn(page);
+
+        ResponseEntity<Page<Map<String, Object>>> res = blogController.getPublishedBlogs("Architecture", "Tech", PageRequest.of(0, 10));
+        assertEquals(HttpStatus.OK, res.getStatusCode());
+        assertEquals(1, res.getBody().getContent().size());
+        assertEquals("Architecture Guide", res.getBody().getContent().get(0).get("title"));
     }
 }

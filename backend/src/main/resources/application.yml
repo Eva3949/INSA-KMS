@@ -19,10 +19,11 @@ spring:
     hikari:
       maximum-pool-size: 5
       minimum-idle: 1
-      idle-timeout: 300000
-      max-lifetime: 600000
+      idle-timeout: 60000
+      max-lifetime: 120000
       connection-timeout: 30000
       validation-timeout: 5000
+      keepalive-time: 30000
       isolate-internal-queries: false
 
   jpa:
@@ -54,6 +55,7 @@ spring:
     # table + saved_searches alert columns). Skip checksum validation so startup
     # is not blocked by that already-applied version.
     validate-on-migrate: false
+    repair-on-migrate: true
     # V4/V5 were applied to the Render database from files that are not in this
     # repository. Tolerate applied-but-missing migrations so startup is not blocked;
     # remove this once those two scripts are restored into db/migration.

@@ -51,7 +51,7 @@ export default function ShareDocumentPage({ params }: { params: { id: string } }
           })));
         }
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLinksLoading(false));
   }, [docId]);
 

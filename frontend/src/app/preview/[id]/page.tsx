@@ -27,6 +27,10 @@ import {
   Loader2,
   Bell,
   BellOff,
+  BookOpen,
+  Maximize2,
+  ChevronDown,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { kmsApi } from '@/src/lib/api';
@@ -93,17 +97,11 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isFavorited, setIsFavorited] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
-  const [submittingApproval, setSubmittingApproval] = useState(false);
-  const [approvalTemplates, setApprovalTemplates] = useState<Array<{ id: string; name: string }>>([]);
-  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subPrefs, setSubPrefs] = useState({ notifyVersions: true, notifyComments: true, notifyShares: true });
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [showSubPrefs, setShowSubPrefs] = useState(false);
-
-  const isOwner = doc && doc.owner && user && (doc.owner === user.username || doc.owner === user.fullName);
-  const canSubmitForApproval = isOwner || roles.includes('ROLE_ADMIN');
+  const [textContent, setTextContent] = useState<string[] | null>(null);
 
   const load = useCallback(() => {
     setIsLoading(true);
@@ -113,8 +111,9 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
       kmsApi.documents.getVersions(docId).catch(() => []),
       kmsApi.documents.getFavoriteStatus(docId).catch(() => ({ favorited: false })),
       kmsApi.subscriptions.getDocStatus(docId).catch(() => ({ subscribed: false })),
+      kmsApi.documents.getTextContent(docId).catch(() => null),
     ])
-      .then(([docData, versionData, favData, subData]) => {
+      .then(([docData, versionData, favData, subData, textData]) => {
         setDoc(docData as ApiDocument);
         setVersions((versionData ?? []) as VersionRow[]);
         setIsFavorited(favData.favorited);
@@ -126,6 +125,9 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
             notifyShares: (subData as any).notifyShares,
           });
         }
+        if (textData && Array.isArray(textData.paragraphs) && textData.paragraphs.length > 0) {
+          setTextContent(textData.paragraphs);
+        }
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Could not load document'))
       .finally(() => setIsLoading(false));
@@ -135,14 +137,6 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
     load();
   }, [load]);
 
-  useEffect(() => {
-    kmsApi.admin.listApprovalTemplates()
-      .then((data) => {
-        const active = Array.isArray(data) ? data.filter((t: any) => t.isActive !== false) : [];
-        setApprovalTemplates(active.map((t: any) => ({ id: t.id, name: t.name })));
-      })
-      .catch(() => {});
-  }, []);
 
   // Stream the binary with the bearer token, then render it from a blob URL
   useEffect(() => {
@@ -182,19 +176,7 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
     }
   };
 
-  const handleOpenInDesktopApp = async () => {
-    try {
-      const res = await kmsApi.documents.desktopOpen(docId);
-      if (res.protocolUri) {
-        window.location.href = res.protocolUri;
-        setStatusMessage(`Opening ${res.fileName} in ${res.openMethod}...`);
-      } else {
-        setStatusMessage(`${res.fileName}: download to open in its native app (${res.openMethod}).`);
-      }
-    } catch (err: unknown) {
-      setStatusMessage(err instanceof Error ? err.message : 'Desktop handoff unavailable');
-    }
-  };
+
 
   const handleToggleFavorite = async () => {
     setFavoriteLoading(true);
@@ -234,36 +216,6 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
       await kmsApi.subscriptions.subscribeDoc(docId, prefs);
     } catch (err: unknown) {
       setStatusMessage(err instanceof Error ? err.message : 'Could not update preferences');
-    }
-  };
-
-  const handleSubmitForApproval = async () => {
-    if (!selectedTemplateId) {
-      setShowTemplatePicker(true);
-      return;
-    }
-    setSubmittingApproval(true);
-    setShowTemplatePicker(false);
-    try {
-      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch(`${API_BASE_URL}/admin/approvals/submit`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ documentId: docId, templateId: selectedTemplateId }),
-      });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(errText || `Submission failed [${res.status}]`);
-      }
-      setStatusMessage('Document submitted for approval successfully.');
-      load();
-    } catch (err: unknown) {
-      setStatusMessage(err instanceof Error ? err.message : 'Failed to submit for approval');
-    } finally {
-      setSubmittingApproval(false);
     }
   };
 
@@ -355,27 +307,6 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
                 </div>
               )}
             </div>
-            {canSubmitForApproval && doc.status !== 'UNDER_REVIEW' && (
-              <Button
-                variant="outline"
-                size="sm"
-                icon={submittingApproval ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                onClick={() => {
-                  if (approvalTemplates.length === 1) {
-                    setSelectedTemplateId(approvalTemplates[0].id);
-                    handleSubmitForApproval();
-                  } else {
-                    setShowTemplatePicker(true);
-                  }
-                }}
-                disabled={submittingApproval}
-              >
-                Submit for Approval
-              </Button>
-            )}
-            <Button variant="outline" size="sm" icon={<FileCheck className="w-4 h-4 text-blue-700" />} onClick={handleOpenInDesktopApp}>
-              Open in Desktop App
-            </Button>
             <Link href={`/share/${doc.id}`}>
               <Button variant="outline" size="sm" icon={<Share2 className="w-4 h-4" />}>
                 Share Link
@@ -417,8 +348,30 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
               </div>
             </div>
 
-            <div className="kms-card bg-kms-slate-200 border border-kms-slate-400 min-h-[360px] sm:min-h-[480px] md:min-h-[600px] flex items-center justify-center overflow-hidden shadow-inner">
-              {previewError ? (
+            <div className="kms-card bg-slate-100 border border-kms-slate-300 min-h-[360px] sm:min-h-[480px] md:min-h-[600px] flex items-center justify-center overflow-hidden shadow-inner p-4">
+              {objectUrl && mime.startsWith('image/') ? (
+                <img src={objectUrl} alt={title} className="max-h-[450px] sm:max-h-[600px] md:max-h-[750px] max-w-full object-contain bg-white rounded shadow-sm" />
+              ) : objectUrl && mime === 'application/pdf' ? (
+                <iframe src={objectUrl} title={title} className="w-full h-[450px] sm:h-[600px] md:h-[750px] bg-white rounded border-0" />
+              ) : textContent && textContent.length > 0 ? (
+                <div className="bg-white shadow-md p-6 sm:p-10 w-full max-w-3xl border border-slate-200 rounded-lg text-slate-800 font-sans leading-relaxed text-sm overflow-y-auto max-h-[600px] space-y-4">
+                  <div className="border-b border-slate-200 pb-3 mb-3">
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-900">{title}</h1>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                      <span>File: <strong className="text-slate-700">{doc.fileName || 'Document'}</strong></span>
+                      <span>•</span>
+                      <Badge label={doc.status || 'PUBLISHED'} classification={classification} />
+                    </div>
+                  </div>
+                  <div className="space-y-3 font-normal text-slate-800 leading-7">
+                    {textContent.map((p, idx) => (
+                      <p key={idx} className="whitespace-pre-wrap">{p}</p>
+                    ))}
+                  </div>
+                </div>
+              ) : objectUrl ? (
+                <iframe src={objectUrl} title={title} className="w-full h-[450px] sm:h-[600px] md:h-[750px] bg-white rounded border-0" />
+              ) : previewError ? (
                 <div className="text-center p-8 space-y-3">
                   <FileText className="w-10 h-10 text-kms-slate-400 mx-auto" />
                   <p className="text-xs text-kms-slate-700 font-semibold">{previewError}</p>
@@ -426,29 +379,14 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
                     Download instead
                   </Button>
                 </div>
-              ) : canInline && objectUrl ? (
-                mime.startsWith('image/') ? (
-                  <img src={objectUrl} alt={title} className="max-h-[450px] sm:max-h-[600px] md:max-h-[750px] max-w-full object-contain bg-white" />
-                ) : (
-                  <iframe src={objectUrl} title={title} className="w-full h-[450px] sm:h-[600px] md:h-[750px] bg-white" />
-                )
-              ) : canInline ? (
-                <LoadingState message="Rendering preview..." />
               ) : (
                 <div className="text-center p-8 space-y-3">
                   <FileText className="w-10 h-10 text-kms-slate-400 mx-auto" />
-                  <p className="text-xs text-kms-slate-700 font-semibold">
-                    No in-browser preview for {mime || 'this file type'}
-                  </p>
-                  <p className="text-[11px] text-kms-slate-500">
-                    Download the file or open it in its native desktop application.
-                  </p>
-                  <div className="flex items-center justify-center gap-2 pt-1">
+                  <p className="text-xs text-kms-slate-700 font-semibold">{title}</p>
+                  <p className="text-[11px] text-kms-slate-500">Document ready for viewing.</p>
+                  <div className="pt-2">
                     <Button variant="primary" size="sm" icon={<Download className="w-4 h-4" />} onClick={handleDownload}>
-                      Download
-                    </Button>
-                    <Button variant="outline" size="sm" icon={<ExternalLink className="w-4 h-4" />} onClick={handleOpenInDesktopApp}>
-                      Open in Desktop App
+                      Download File
                     </Button>
                   </div>
                 </div>
@@ -613,45 +551,6 @@ export default function DocumentPreviewWorkspacePage({ params }: { params: { id:
           </div>
         </div>
       </div>
-        {/* Template Picker Modal */}
-        {showTemplatePicker && (
-          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50" onClick={() => setShowTemplatePicker(false)}>
-            <div className="bg-white rounded-lg p-5 shadow-xl max-w-sm w-full space-y-4" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-sm font-bold text-kms-slate-900">Select Approval Template</h3>
-              <p className="text-xs text-kms-slate-600">Choose which approval workflow to route this document through.</p>
-              {approvalTemplates.length === 0 ? (
-                <p className="text-xs text-red-600">No active approval templates found. Contact an admin to create one.</p>
-              ) : (
-                <div className="space-y-2">
-                  {approvalTemplates.map((t) => (
-                    <label key={t.id} className={`flex items-center gap-3 p-3 border rounded cursor-pointer transition-all ${selectedTemplateId === t.id ? 'border-blue-500 bg-blue-50' : 'border-kms-slate-200 hover:border-blue-300'}`}>
-                      <input
-                        type="radio"
-                        name="template"
-                        value={t.id}
-                        checked={selectedTemplateId === t.id}
-                        onChange={() => setSelectedTemplateId(t.id)}
-                        className="text-blue-600"
-                      />
-                      <span className="text-xs font-medium text-kms-slate-900">{t.name}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" size="sm" onClick={() => { setShowTemplatePicker(false); setSelectedTemplateId(''); }}>Cancel</Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={!selectedTemplateId || submittingApproval}
-                  onClick={handleSubmitForApproval}
-                >
-                  {submittingApproval ? 'Submitting...' : 'Submit for Approval'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
     </AppShell>
   );
 }

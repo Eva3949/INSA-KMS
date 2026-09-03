@@ -8,167 +8,263 @@ import com.enterprise.kms.repository.DiscussionTopicRepository;
 import com.enterprise.kms.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.time.OffsetDateTime;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
-@Transactional
 public class DiscussionService {
-
     private final DiscussionTopicRepository topicRepository;
     private final DiscussionReplyRepository replyRepository;
     private final UserRepository userRepository;
-    private final AuditService auditService;
+    private final NotificationService notificationService;
+    private final Map<UUID, Map<String, OffsetDateTime>> topicUserViews = new ConcurrentHashMap<>();
 
     public DiscussionService(DiscussionTopicRepository topicRepository,
                              DiscussionReplyRepository replyRepository,
                              UserRepository userRepository,
-                             AuditService auditService) {
+                             NotificationService notificationService) {
         this.topicRepository = topicRepository;
         this.replyRepository = replyRepository;
         this.userRepository = userRepository;
-        this.auditService = auditService;
+        this.notificationService = notificationService;
     }
 
-    @Transactional(readOnly = true)
-    public Page<DiscussionTopic> getTopics(String status, String category, String search, Pageable pageable) {
-        String statusFilter = (status != null && !status.isBlank()) ? status.toUpperCase() : null;
-        String categoryFilter = (category != null && !category.isBlank()) ? category : null;
-        String searchFilter = (search != null && !search.isBlank()) ? search.trim() : null;
+    @Transactional
+    public DiscussionTopic createTopic(Map<String, Object> body, String username) {
+        String title = (String) body.get("title");
+        String description = (String) body.get("description");
 
-        return topicRepository.searchTopics(statusFilter, categoryFilter, searchFilter, pageable);
-    }
-
-    public DiscussionTopic getTopicById(UUID id) {
-        DiscussionTopic topic = topicRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Discussion topic not found with ID: " + id));
-        topic.setViewsCount(topic.getViewsCount() + 1);
-        return topicRepository.save(topic);
-    }
-
-    @Transactional(readOnly = true)
-    public List<DiscussionReply> getRepliesForTopic(UUID topicId) {
-        return replyRepository.findByTopicIdOrderByCreatedAtAsc(topicId);
-    }
-
-    public DiscussionTopic createTopic(String title, String description, String category, String authorUsername) {
-        DiscussionTopic topic = new DiscussionTopic();
-        topic.setTitle(title);
-        topic.setDescription(description);
-        if (category != null && !category.isBlank()) {
-            topic.setCategory(category);
+        if (title == null || title.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Topic title is required");
         }
-        topic.setStatus("OPEN");
+        if (description == null || description.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Topic description is required");
+        }
 
-        if (authorUsername != null && !authorUsername.isBlank()) {
-            Optional<User> uOpt = userRepository.findByUsername(authorUsername);
-            if (uOpt.isPresent()) {
-                topic.setAuthorId(uOpt.get().getId());
-                topic.setAuthorName(uOpt.get().getFullName() != null ? uOpt.get().getFullName() : uOpt.get().getUsername());
-            } else {
-                topic.setAuthorName(authorUsername);
+        User author = userRepository.findByUsername(username)
+                .or(() -> userRepository.findByKeycloakSub("sub-" + username))
+                .orElse(null);
+
+        DiscussionTopic topic = new DiscussionTopic();
+        topic.setTitle(title.trim());
+        topic.setDescription(sanitizeHtml(description));
+        topic.setStatus("OPEN");
+        topic.setAuthor(author);
+        topic.setAuthorUsername(username);
+
+        DiscussionTopic savedTopic = topicRepository.save(topic);
+
+        // Broadcast notification for new discussion topic to all users
+        try {
+            String notifTitle = "New Discussion Topic: " + savedTopic.getTitle();
+            String notifMessage = username + " created a new discussion topic: \"" + savedTopic.getTitle() + "\"";
+            List<User> allUsers = userRepository.findAll();
+            for (User u : allUsers) {
+                if (u.getUsername() != null && !u.getUsername().equalsIgnoreCase(username)) {
+                    notificationService.sendNotificationToUser(u, notifTitle, notifMessage);
+                }
+            }
+        } catch (Exception e) {
+            // Silently swallow notification errors
+        }
+
+        return savedTopic;
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Map<String, Object>> searchTopics(String search, String status, Pageable pageable) {
+        String effectiveSearch = (search != null && !search.isBlank()) ? search.trim() : null;
+        String effectiveStatus = (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status.trim())) ? status.trim() : null;
+
+        return topicRepository.searchTopics(effectiveSearch, effectiveStatus, pageable)
+                .map(this::toTopicResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getTopicDetail(UUID id, String username) {
+        DiscussionTopic topic = topicRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found"));
+
+        if (username != null && !username.isBlank()) {
+            topicUserViews.computeIfAbsent(id, k -> new ConcurrentHashMap<>())
+                          .put(username.trim().toLowerCase(), OffsetDateTime.now());
+        }
+
+        Map<String, Object> response = toTopicResponse(topic);
+        response.put("isRead", isMessageReadByOtherUser(id, topic.getAuthorUsername(), topic.getCreatedAt()));
+
+        List<DiscussionReply> replies = replyRepository.findByTopicIdOrderByCreatedAtAsc(id);
+        List<Map<String, Object>> replyList = new ArrayList<>();
+        for (DiscussionReply r : replies) {
+            Map<String, Object> replyMap = toReplyResponse(r);
+            replyMap.put("isRead", isMessageReadByOtherUser(id, r.getAuthorUsername(), r.getCreatedAt()));
+            replyList.add(replyMap);
+        }
+        response.put("replies", replyList);
+        return response;
+    }
+
+    private boolean isMessageReadByOtherUser(UUID topicId, String authorUsername, OffsetDateTime createdAt) {
+        Map<String, OffsetDateTime> userViews = topicUserViews.get(topicId);
+        if (userViews == null || userViews.isEmpty()) {
+            return false;
+        }
+        String authorLower = authorUsername != null ? authorUsername.trim().toLowerCase() : "";
+        for (Map.Entry<String, OffsetDateTime> entry : userViews.entrySet()) {
+            String viewer = entry.getKey();
+            OffsetDateTime viewedAt = entry.getValue();
+            if (!viewer.equalsIgnoreCase(authorLower) && viewedAt != null && !viewedAt.isBefore(createdAt)) {
+                return true;
             }
         }
-
-        DiscussionTopic saved = topicRepository.save(topic);
-        auditService.recordAuditLog(authorUsername, null, "DISCUSSION_TOPIC_CREATE", "DISCUSSION", saved.getId().toString(), null, "Created topic: " + title);
-        return saved;
+        return false;
     }
 
-    public DiscussionTopic updateTopicStatus(UUID id, String status, String currentUsername, boolean isAdmin) {
-        DiscussionTopic topic = topicRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Discussion topic not found with ID: " + id));
-
-        if (!isAdmin && !isAuthor(topic, currentUsername)) {
-            throw new SecurityException("You are not authorized to change the status of this topic");
-        }
-
-        String newStatus = (status != null && status.equalsIgnoreCase("CLOSED")) ? "CLOSED" : "OPEN";
-        topic.setStatus(newStatus);
-        DiscussionTopic saved = topicRepository.save(topic);
-        auditService.recordAuditLog(currentUsername, null, "DISCUSSION_TOPIC_STATUS", "DISCUSSION", saved.getId().toString(), null, "Updated topic status to " + newStatus);
-        return saved;
-    }
-
-    public void deleteTopic(UUID id, String currentUsername, boolean isAdmin) {
-        DiscussionTopic topic = topicRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Discussion topic not found with ID: " + id));
-
-        if (!isAdmin && !isAuthor(topic, currentUsername)) {
-            throw new SecurityException("You are not authorized to delete this topic");
-        }
-
-        topicRepository.delete(topic);
-        auditService.recordAuditLog(currentUsername, null, "DISCUSSION_TOPIC_DELETE", "DISCUSSION", id.toString(), null, "Deleted topic: " + topic.getTitle());
-    }
-
-    public DiscussionReply createReply(UUID topicId, UUID parentReplyId, String content, String authorUsername, boolean isAdmin) {
+    @Transactional
+    public DiscussionReply addReply(UUID topicId, Map<String, Object> body, String username) {
         DiscussionTopic topic = topicRepository.findById(topicId)
-                .orElseThrow(() -> new IllegalArgumentException("Discussion topic not found with ID: " + topicId));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found"));
 
-        if ("CLOSED".equalsIgnoreCase(topic.getStatus()) && !isAdmin) {
-            throw new IllegalStateException("Cannot reply to a closed discussion topic");
+        // CRITICAL REQUIREMENT: Reject new replies when discussion is CLOSED at backend level
+        if ("CLOSED".equalsIgnoreCase(topic.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot reply to a closed discussion topic");
         }
+
+        String content = (String) body.get("content");
+        if (content == null || content.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Reply content cannot be empty");
+        }
+
+        User author = userRepository.findByUsername(username)
+                .or(() -> userRepository.findByKeycloakSub("sub-" + username))
+                .orElse(null);
 
         DiscussionReply reply = new DiscussionReply();
-        reply.setTopicId(topicId);
-        reply.setParentReplyId(parentReplyId);
-        reply.setContent(content);
+        reply.setTopic(topic);
+        reply.setContent(sanitizeHtml(content));
+        reply.setAuthor(author);
+        reply.setAuthorUsername(username);
 
-        if (authorUsername != null && !authorUsername.isBlank()) {
-            Optional<User> uOpt = userRepository.findByUsername(authorUsername);
-            if (uOpt.isPresent()) {
-                reply.setAuthorId(uOpt.get().getId());
-                reply.setAuthorName(uOpt.get().getFullName() != null ? uOpt.get().getFullName() : uOpt.get().getUsername());
-            } else {
-                reply.setAuthorName(authorUsername);
+        if (body.containsKey("parentReplyId") && body.get("parentReplyId") != null) {
+            String parentIdStr = (String) body.get("parentReplyId");
+            if (!parentIdStr.isBlank()) {
+                UUID parentUuid = UUID.fromString(parentIdStr);
+                DiscussionReply parent = replyRepository.findById(parentUuid)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Parent reply not found"));
+
+                if (!parent.getTopic().getId().equals(topicId)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Parent reply does not belong to this discussion topic");
+                }
+                reply.setParentReply(parent);
             }
         }
 
-        DiscussionReply savedReply = replyRepository.save(reply);
-        topic.setRepliesCount(replyRepository.countByTopicId(topicId));
+        // Update topic updatedAt so topic moves to top of discussions list
+        topic.setUpdatedAt(OffsetDateTime.now());
         topicRepository.save(topic);
 
-        auditService.recordAuditLog(authorUsername, null, "DISCUSSION_REPLY_CREATE", "DISCUSSION", savedReply.getId().toString(), null, "Added reply to topic: " + topic.getTitle());
+        DiscussionReply savedReply = replyRepository.save(reply);
+
+        // Broadcast notification for new discussion reply/text to all users
+        try {
+            String notifTitle = "New Message in Discussion: " + topic.getTitle();
+            String snippet = content.length() > 80 ? content.substring(0, 80) + "..." : content;
+            String notifMessage = username + ": \"" + snippet + "\"";
+            List<User> allUsers = userRepository.findAll();
+            for (User u : allUsers) {
+                if (u.getUsername() != null && !u.getUsername().equalsIgnoreCase(username)) {
+                    notificationService.sendNotificationToUser(u, notifTitle, notifMessage);
+                }
+            }
+        } catch (Exception e) {
+            // Silently swallow notification errors to ensure reply posting succeeds
+        }
+
         return savedReply;
     }
 
-    public void deleteReply(UUID replyId, String currentUsername, boolean isAdmin) {
+    @Transactional
+    public DiscussionTopic setTopicStatus(UUID topicId, String status, String username, boolean isAdmin) {
+        DiscussionTopic topic = topicRepository.findById(topicId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found"));
+
+        boolean isAuthor = topic.getAuthorUsername().equalsIgnoreCase(username);
+        if (!isAuthor && !isAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only author or admin can change discussion topic status");
+        }
+
+        if ("CLOSED".equalsIgnoreCase(status)) {
+            topic.setStatus("CLOSED");
+        } else {
+            topic.setStatus("OPEN");
+        }
+
+        return topicRepository.save(topic);
+    }
+
+    @Transactional
+    public void deleteTopic(UUID topicId, String username, boolean isAdmin) {
+        DiscussionTopic topic = topicRepository.findById(topicId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found"));
+
+        boolean isAuthor = topic.getAuthorUsername().equalsIgnoreCase(username);
+        if (!isAuthor && !isAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only author or admin can delete discussion topic");
+        }
+
+        topicRepository.delete(topic);
+    }
+
+    @Transactional
+    public void deleteReply(UUID replyId, String username, boolean isAdmin) {
         DiscussionReply reply = replyRepository.findById(replyId)
-                .orElseThrow(() -> new IllegalArgumentException("Discussion reply not found with ID: " + replyId));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion reply not found"));
 
-        if (!isAdmin && !isReplyAuthor(reply, currentUsername)) {
-            throw new SecurityException("You are not authorized to delete this reply");
+        boolean isAuthor = reply.getAuthorUsername().equalsIgnoreCase(username);
+        if (!isAuthor && !isAdmin) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only reply author or admin can delete this reply");
         }
 
-        UUID topicId = reply.getTopicId();
         replyRepository.delete(reply);
-
-        Optional<DiscussionTopic> topicOpt = topicRepository.findById(topicId);
-        if (topicOpt.isPresent()) {
-            DiscussionTopic topic = topicOpt.get();
-            topic.setRepliesCount(replyRepository.countByTopicId(topicId));
-            topicRepository.save(topic);
-        }
-
-        auditService.recordAuditLog(currentUsername, null, "DISCUSSION_REPLY_DELETE", "DISCUSSION", replyId.toString(), null, "Deleted reply");
     }
 
-    private boolean isAuthor(DiscussionTopic topic, String username) {
-        if (username == null) return false;
-        if (username.equalsIgnoreCase(topic.getAuthorName())) return true;
-        Optional<User> uOpt = userRepository.findByUsername(username);
-        return uOpt.isPresent() && uOpt.get().getId().equals(topic.getAuthorId());
+    public Map<String, Object> toTopicResponse(DiscussionTopic topic) {
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("id", topic.getId());
+        res.put("title", topic.getTitle());
+        res.put("description", topic.getDescription());
+        res.put("status", topic.getStatus());
+        res.put("author", topic.getAuthorUsername());
+        res.put("authorId", topic.getAuthor() != null ? topic.getAuthor().getId() : null);
+        res.put("createdAt", topic.getCreatedAt());
+        res.put("updatedAt", topic.getUpdatedAt());
+        res.put("replyCount", replyRepository.countByTopicId(topic.getId()));
+        return res;
     }
 
-    private boolean isReplyAuthor(DiscussionReply reply, String username) {
-        if (username == null) return false;
-        if (username.equalsIgnoreCase(reply.getAuthorName())) return true;
-        Optional<User> uOpt = userRepository.findByUsername(username);
-        return uOpt.isPresent() && uOpt.get().getId().equals(reply.getAuthorId());
+    public Map<String, Object> toReplyResponse(DiscussionReply reply) {
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("id", reply.getId());
+        res.put("topicId", reply.getTopic().getId());
+        res.put("parentReplyId", reply.getParentReply() != null ? reply.getParentReply().getId() : null);
+        res.put("content", reply.getContent());
+        res.put("author", reply.getAuthorUsername());
+        res.put("authorId", reply.getAuthor() != null ? reply.getAuthor().getId() : null);
+        res.put("createdAt", reply.getCreatedAt());
+        res.put("updatedAt", reply.getUpdatedAt());
+        return res;
+    }
+
+    private String sanitizeHtml(String html) {
+        if (html == null) return "";
+        return html.replaceAll("(?i)<script.*?>.*?</script>", "")
+                   .replaceAll("(?i)javascript:", "")
+                   .replaceAll("(?i)on\\w+\\s*=", "data-disabled=");
     }
 }
