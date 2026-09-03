@@ -51,8 +51,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
     { href: '/blogs', label: 'Blogs & News', icon: FileText, role: 'ROLE_VIEWER' },
     { href: '/discussions', label: 'Discussions & Forum', icon: Users, role: 'ROLE_VIEWER' },
     { href: '/articles/create', label: 'Create Article', icon: FileText, role: 'ROLE_CONTRIBUTOR' },
-    { href: '/blogs', label: 'Blogs Feed', icon: BookOpen, role: 'ROLE_VIEWER' },
-    { href: '/discussions', label: 'Discussions & Forum', icon: MessageSquare, role: 'ROLE_VIEWER' },
     { href: '/folders', label: 'Folders', icon: Folder, role: 'ROLE_CONTRIBUTOR' },
     { href: '/search', label: 'Advanced Search', icon: Search, role: 'ROLE_VIEWER' },
     { href: '/search/saved', label: 'Saved Searches & Alerts', icon: BookmarkCheck, role: 'ROLE_VIEWER' },
