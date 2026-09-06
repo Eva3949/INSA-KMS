@@ -18,6 +18,7 @@ public interface AuditLogRepository extends JpaRepository<AuditLogEntity, UUID> 
     Page<AuditLogEntity> findByActionOrderByCreatedAtDesc(String action, Pageable pageable);
     List<AuditLogEntity> findByCreatedAtAfterOrderByCreatedAtAsc(OffsetDateTime since);
     List<AuditLogEntity> findByOrderByCreatedAtAsc();
+    List<AuditLogEntity> findByResourceTypeAndResourceIdOrderByCreatedAtDesc(String resourceType, String resourceId);
 
     @Query(value = "SELECT user_id, MAX(user_email) AS user_email, COUNT(*) AS action_count, MAX(created_at) AS last_activity " +
                    "FROM audit_logs WHERE created_at >= :since " +

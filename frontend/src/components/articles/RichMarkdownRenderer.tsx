@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { sanitizeHtml } from '@/src/lib/sanitize';
 
 interface RichMarkdownRendererProps {
   content: string;
@@ -88,7 +89,7 @@ export const RichMarkdownRenderer: React.FC<RichMarkdownRendererProps> = ({ cont
     result = result.replace(/~~(.*?)~~/g, '<del class="line-through text-kms-slate-400">$1</del>');
     // underline <u>...</u>
     result = result.replace(/<u>(.*?)<\/u>/g, '<u>$1</u>');
-    return <span dangerouslySetInnerHTML={{ __html: result }} />;
+    return <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(result) }} />;
   };
 
   const formatInline = (text: string): React.ReactNode => {
@@ -149,8 +150,10 @@ export const RichMarkdownRenderer: React.FC<RichMarkdownRendererProps> = ({ cont
       if (match.index > lastIdx) {
         tokens.push(parseFormatting(text.substring(lastIdx, match.index)));
       }
+      const rawHref = match[2] || '';
+      const isSafeHref = rawHref.startsWith('http://') || rawHref.startsWith('https://') || rawHref.startsWith('/') || rawHref.startsWith('#');
       tokens.push(
-        <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline font-semibold hover:text-blue-900">
+        <a key={match.index} href={isSafeHref ? rawHref : '#'} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline font-semibold hover:text-blue-900">
           {match[1]}
         </a>
       );

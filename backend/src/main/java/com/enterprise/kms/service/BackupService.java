@@ -193,12 +193,18 @@ public class BackupService {
 
     public Map<String, Object> restoreBackup(String fileName) {
         Map<String, Object> result = new LinkedHashMap<>();
-        Path backupDir = Path.of(backupLocation);
-        Path backupFile = backupDir.resolve(fileName);
-
-        if (!Files.exists(backupFile)) {
+        if (fileName == null || fileName.isBlank() || !fileName.matches("^[a-zA-Z0-9_.-]+\\.sql$") || fileName.contains("..")) {
             result.put("status", "FAILED");
-            result.put("error", "Backup file not found: " + fileName);
+            result.put("error", "Invalid backup filename format. Must be an alphanumeric .sql filename without directory paths.");
+            return result;
+        }
+
+        Path backupDir = Path.of(backupLocation).toAbsolutePath().normalize();
+        Path backupFile = backupDir.resolve(fileName).normalize();
+
+        if (!backupFile.startsWith(backupDir) || !Files.exists(backupFile)) {
+            result.put("status", "FAILED");
+            result.put("error", "Backup file not found or invalid: " + fileName);
             return result;
         }
 

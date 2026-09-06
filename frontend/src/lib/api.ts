@@ -86,6 +86,16 @@ async function trySilentRefresh(): Promise<string | null> {
   return null;
 }
 
+export function getAuthenticatedMediaUrl(url?: string | null): string {
+  if (!url) return '';
+  if (typeof window === 'undefined') return url;
+  const token = sessionStorage.getItem('kms_access_token');
+  if (!token) return url;
+  if (url.includes('token=') || url.includes('access_token=')) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}token=${encodeURIComponent(token)}`;
+}
+
 async function fetchApi<T>(endpoint: string, options: RequestInit = {}, isRetry = false): Promise<T> {
   const defaultHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -594,7 +604,7 @@ export const kmsApi = {
       if (params?.sort) q.set('sort', params.sort);
       return fetchApi<any>(`/knowledge-transfer/cases?${q.toString()}`);
     },
-    createCase: (payload: { title: string; employeeId: string; reasonType: string; priority?: string; notes?: string; startDate?: string; expectedCompletionDate?: string; managerId?: string; hrRepId?: string; successorId?: string; departmentId?: string }) =>
+    createCase: (payload: { title: string; employeeId: string; reasonType: string; priority?: string; notes?: string; startDate?: string; expectedCompletionDate?: string; managerId?: string; hrRepId?: string; successorId?: string; departmentId?: string; selectedDocuments?: Array<{ documentId: string; transferAction?: string; notes?: string }> }) =>
       fetchApi<any>('/knowledge-transfer/cases', { method: 'POST', body: JSON.stringify(payload) }),
     getCase: (id: string) => fetchApi<any>(`/knowledge-transfer/cases/${id}`),
     updateCase: (id: string, payload: Record<string, any>) =>
@@ -612,13 +622,69 @@ export const kmsApi = {
     listSubmissions: (caseId: string) => fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/submissions`),
     submitKnowledge: (caseId: string, payload: { title: string; content: string; category?: string; documentId?: string }) =>
       fetchApi<any>(`/knowledge-transfer/cases/${caseId}/submissions`, { method: 'POST', body: JSON.stringify(payload) }),
+    updateSubmission: (submissionId: string, payload: { title?: string; content?: string; category?: string; documentId?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/submissions/${submissionId}`, { method: 'PUT', body: JSON.stringify(payload) }),
     validateKnowledge: (submissionId: string, payload: { status: string; reviewComments?: string }) =>
       fetchApi<any>(`/knowledge-transfer/submissions/${submissionId}/validate`, { method: 'PUT', body: JSON.stringify(payload) }),
+    validateSubmission: (submissionId: string, payload: { approved: boolean; comments?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/submissions/${submissionId}/validate`, { method: 'POST', body: JSON.stringify(payload) }),
+    // Sessions
     listSessions: (caseId: string) => fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/sessions`),
     scheduleSession: (caseId: string, payload: { title: string; scheduledAt: string; locationOrLink?: string; meetingNotes?: string; attendeeIds?: string[]; recordingDocumentId?: string }) =>
       fetchApi<any>(`/knowledge-transfer/cases/${caseId}/sessions`, { method: 'POST', body: JSON.stringify(payload) }),
+    createSession: (caseId: string, payload: { title: string; scheduledAt: string; durationMinutes?: number; meetingLink?: string; agenda?: string; notes?: string; attendeeIds?: string[] }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/sessions`, { method: 'POST', body: JSON.stringify(payload) }),
     updateSession: (sessionId: string, payload: Record<string, any>) =>
       fetchApi<any>(`/knowledge-transfer/sessions/${sessionId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    recordAttendance: (sessionId: string, payload: { userId: string; attended: boolean; notes?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/sessions/${sessionId}/attendance`, { method: 'POST', body: JSON.stringify(payload) }),
+    // Inventory
+    listInventory: (caseId: string) => fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/inventory`),
+    addInventoryItem: (caseId: string, payload: { category: string; title: string; description?: string; criticality?: string; documentationUrl?: string; successorNotes?: string; sortOrder?: number; notes?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/inventory`, { method: 'POST', body: JSON.stringify(payload) }),
+    updateInventoryItem: (itemId: string, payload: Record<string, any>) =>
+      fetchApi<any>(`/knowledge-transfer/inventory/${itemId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    deleteInventoryItem: (itemId: string) =>
+      fetchApi<void>(`/knowledge-transfer/inventory/${itemId}`, { method: 'DELETE' }),
+    // Documents
+    getEmployeeAuthoredDocuments: (employeeId: string) =>
+      fetchApi<any[]>(`/knowledge-transfer/employees/${employeeId}/documents`),
+    listEmployeeDocuments: (caseId: string) =>
+      fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/employee-documents`),
+    listCaseDocuments: (caseId: string) =>
+      fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/documents`),
+    attachDocument: (caseId: string, payload: { documentId: string; transferAction?: string; handoverType?: string; notes?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/documents`, { method: 'POST', body: JSON.stringify(payload) }),
+    attachDocumentsBatch: (caseId: string, documents: Array<{ documentId: string; transferAction?: string; notes?: string }>) =>
+      fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/documents/batch`, {
+        method: 'POST',
+        body: JSON.stringify({ documents }),
+      }),
+    detachDocument: (caseId: string, documentId: string) =>
+      fetchApi<void>(`/knowledge-transfer/cases/${caseId}/documents/${documentId}`, { method: 'DELETE' }),
+    // Assets
+    listAssets: (caseId: string) => fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/assets`),
+    addAsset: (caseId: string, payload: { assetTag?: string; assetName?: string; assetType: string; assetIdentifier?: string; description?: string; serialNumber?: string; conditionNote?: string; conditionStatus?: string; notes?: string; status?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/assets`, { method: 'POST', body: JSON.stringify(payload) }),
+    updateAsset: (assetId: string, payload: Record<string, any>) =>
+      fetchApi<any>(`/knowledge-transfer/assets/${assetId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    // Access Reviews
+    listAccessReviews: (caseId: string) => fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/access-reviews`),
+    addAccessReview: (caseId: string, payload: { systemName: string; accessLevel?: string; accountIdentifier?: string; successorAction?: string; revocationRequired?: boolean; notes?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/access-reviews`, { method: 'POST', body: JSON.stringify(payload) }),
+    updateAccessReview: (reviewId: string, payload: Record<string, any>) =>
+      fetchApi<any>(`/knowledge-transfer/access-reviews/${reviewId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    // Reviews & Successor Acceptance
+    submitForReview: (caseId: string) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/submit-review`, { method: 'POST' }),
+    managerReview: (caseId: string, payload: { approved: boolean; comments?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/manager-review`, { method: 'POST', body: JSON.stringify(payload) }),
+    hrReview: (caseId: string, payload: { approved: boolean; comments?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/hr-review`, { method: 'POST', body: JSON.stringify(payload) }),
+    successorAcceptance: (caseId: string, payload: { accepted: boolean; notes?: string }) =>
+      fetchApi<any>(`/knowledge-transfer/cases/${caseId}/successor-acceptance`, { method: 'POST', body: JSON.stringify(payload) }),
+    // Audit Logs & Clearance
+    getAuditLogs: (caseId: string) => fetchApi<any[]>(`/knowledge-transfer/cases/${caseId}/audit-logs`),
     getClearance: (caseId: string) => fetchApi<any>(`/knowledge-transfer/cases/${caseId}/clearance`),
     completeTransfer: (caseId: string, payload?: { notes?: string }) =>
       fetchApi<any>(`/knowledge-transfer/cases/${caseId}/complete`, { method: 'POST', body: JSON.stringify(payload || {}) }),
@@ -799,6 +865,90 @@ export const kmsApi = {
       fetchApi<any>(`/discussions/${topicId}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
     deleteTopic: (topicId: string) => fetchApi<void>(`/discussions/${topicId}`, { method: 'DELETE' }),
     deleteReply: (topicId: string, replyId: string) => fetchApi<void>(`/discussions/${topicId}/replies/${replyId}`, { method: 'DELETE' }),
+    listVideoSessions: (discussionId: string) => fetchApi<any[]>(`/discussions/${discussionId}/video-sessions`),
+    createVideoSession: (
+      discussionId: string,
+      data: {
+        title: string;
+        description?: string;
+        scheduledStart?: string;
+        scheduledEnd?: string;
+        durationMinutes?: number;
+        participantUserIds?: string[];
+        invitedUsernames?: string[];
+      }
+    ) =>
+      fetchApi<any>(`/discussions/${discussionId}/video-sessions`, { method: 'POST', body: JSON.stringify(data) }),
+    uploadMedia: async (
+      discussionId: string,
+      file: File | Blob,
+      replyId?: string,
+      mediaType?: 'IMAGE' | 'AUDIO',
+      durationSeconds?: number,
+      filename?: string
+    ) => {
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+      const formData = new FormData();
+      if (file instanceof File) {
+        formData.append('file', file);
+      } else {
+        const safeName = filename || (mediaType === 'AUDIO' ? 'voice-note.webm' : 'image.png');
+        formData.append('file', file, safeName);
+      }
+      if (replyId) formData.append('replyId', replyId);
+      if (mediaType) formData.append('mediaType', mediaType);
+      if (durationSeconds !== undefined) formData.append('durationSeconds', String(durationSeconds));
+
+      const res = await fetch(`${API_BASE_URL}/discussions/${discussionId}/media`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      if (!res.ok) {
+        let errText = '';
+        try {
+          const errObj = await res.json();
+          errText = errObj.message || errObj.error || '';
+        } catch {
+          errText = await res.text();
+        }
+        throw new Error(errText || `Media upload failed [${res.status}]`);
+      }
+      return res.json();
+    },
+    getMediaMetadata: (discussionId: string, mediaId: string) =>
+      fetchApi<any>(`/discussions/${discussionId}/media/${mediaId}`),
+    getMediaUrl: (discussionId: string, mediaId: string) => {
+      const base = `${API_BASE_URL}/discussions/${discussionId}/media/${mediaId}/content`;
+      return getAuthenticatedMediaUrl(base);
+    },
+    deleteMedia: (discussionId: string, mediaId: string) =>
+      fetchApi<void>(`/discussions/${discussionId}/media/${mediaId}`, { method: 'DELETE' }),
+  },
+
+
+  // Video Sessions (Virtual Video Discussion)
+  videoSessions: {
+    getSession: (sessionId: string) => fetchApi<any>(`/video-sessions/${sessionId}`),
+    startSession: (sessionId: string) => fetchApi<any>(`/video-sessions/${sessionId}/start`, { method: 'POST' }),
+    joinSession: (sessionId: string) => fetchApi<any>(`/video-sessions/${sessionId}/join`, { method: 'POST' }),
+    leaveSession: (sessionId: string) => fetchApi<void>(`/video-sessions/${sessionId}/leave`, { method: 'POST' }),
+    endSession: (sessionId: string) => fetchApi<any>(`/video-sessions/${sessionId}/end`, { method: 'POST' }),
+    inviteParticipants: (sessionId: string, data: { participantUserIds?: string[]; usernames?: string[] } | string[]) => {
+      const body = Array.isArray(data) ? { usernames: data } : data;
+      return fetchApi<any>(`/video-sessions/${sessionId}/participants`, { method: 'POST', body: JSON.stringify(body) });
+    },
+    removeParticipant: (sessionId: string, username: string) =>
+      fetchApi<void>(`/video-sessions/${sessionId}/participants/${encodeURIComponent(username)}`, { method: 'DELETE' }),
+    getAvailableUsers: (query?: string) =>
+      fetchApi<Array<{
+        id: string;
+        username: string;
+        fullName: string;
+        email?: string;
+        department?: string;
+        jobTitle?: string;
+      }>>(`/video-sessions/available-users${query ? `?q=${encodeURIComponent(query)}` : ''}`),
   },
 
   // Analytics

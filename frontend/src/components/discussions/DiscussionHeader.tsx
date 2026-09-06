@@ -11,7 +11,9 @@ import {
   Trash2,
   User,
   Calendar,
-  CheckCircle2
+  CheckCircle2,
+  Video,
+  Radio
 } from 'lucide-react';
 
 interface DiscussionHeaderProps {
@@ -24,15 +26,19 @@ interface DiscussionHeaderProps {
     description?: string;
   };
   isAuthorOrAdmin: boolean;
+  activeSessionCount?: number;
   onToggleStatus: () => void;
   onDeleteTopic: () => void;
+  onOpenVideoModal?: () => void;
 }
 
 export const DiscussionHeader: React.FC<DiscussionHeaderProps> = ({
   topic,
   isAuthorOrAdmin,
+  activeSessionCount = 0,
   onToggleStatus,
   onDeleteTopic,
+  onOpenVideoModal,
 }) => {
   const router = useRouter();
   const isClosed = topic.status === 'CLOSED';
@@ -59,37 +65,66 @@ export const DiscussionHeader: React.FC<DiscussionHeaderProps> = ({
             <span>Back to Topics</span>
           </button>
 
-          {isAuthorOrAdmin && (
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {/* Video Discussion Trigger */}
+            {onOpenVideoModal && (
               <Button
-                variant="outline"
+                variant={activeSessionCount > 0 ? 'primary' : 'outline'}
                 size="sm"
-                onClick={onToggleStatus}
-                className="h-8 text-xs font-semibold px-2.5 flex items-center gap-1.5 rounded-lg"
+                onClick={onOpenVideoModal}
+                className={`h-8 text-xs font-bold px-2.5 flex items-center gap-1.5 rounded-lg transition-all ${
+                  activeSessionCount > 0
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs animate-pulse'
+                    : 'text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'
+                }`}
               >
-                {isClosed ? (
+                {activeSessionCount > 0 ? (
                   <>
-                    <Unlock className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="hidden sm:inline">Reopen Discussion</span>
+                    <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                    <Video className="w-3.5 h-3.5" />
+                    <span>Live Video ({activeSessionCount})</span>
                   </>
                 ) : (
                   <>
-                    <Lock className="w-3.5 h-3.5 text-amber-600" />
-                    <span className="hidden sm:inline">Close Discussion</span>
+                    <Video className="w-3.5 h-3.5" />
+                    <span>Video Discussion</span>
                   </>
                 )}
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={onDeleteTopic}
-                className="h-8 text-xs font-semibold px-2.5 flex items-center gap-1.5 text-rose-600 border-rose-200 hover:bg-rose-50 rounded-lg"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Delete Topic</span>
-              </Button>
-            </div>
-          )}
+            )}
+
+            {isAuthorOrAdmin && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onToggleStatus}
+                  className="h-8 text-xs font-semibold px-2.5 flex items-center gap-1.5 rounded-lg"
+                >
+                  {isClosed ? (
+                    <>
+                      <Unlock className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="hidden sm:inline">Reopen Discussion</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-3.5 h-3.5 text-amber-600" />
+                      <span className="hidden sm:inline">Close Discussion</span>
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onDeleteTopic}
+                  className="h-8 text-xs font-semibold px-2.5 flex items-center gap-1.5 text-rose-600 border-rose-200 hover:bg-rose-50 rounded-lg"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Delete Topic</span>
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Title and Metadata */}

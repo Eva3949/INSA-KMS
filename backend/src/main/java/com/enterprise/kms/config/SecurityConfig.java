@@ -22,9 +22,12 @@ import java.util.List;
 public class SecurityConfig {
 
     private final KeycloakJwtAuthenticationConverter keycloakJwtAuthenticationConverter;
+    private final String allowedOriginsStr;
 
-    public SecurityConfig(KeycloakJwtAuthenticationConverter keycloakJwtAuthenticationConverter) {
+    public SecurityConfig(KeycloakJwtAuthenticationConverter keycloakJwtAuthenticationConverter,
+                          @org.springframework.beans.factory.annotation.Value("${kms.cors.allowed-origins:http://localhost:3001,http://localhost:3000,http://127.0.0.1:3001,http://127.0.0.1:3000,http://localhost:8080,http://localhost:8081,http://127.0.0.1:8080,http://127.0.0.1:8081,https://kms.enterprise.internal}") String allowedOriginsStr) {
         this.keycloakJwtAuthenticationConverter = keycloakJwtAuthenticationConverter;
+        this.allowedOriginsStr = allowedOriginsStr;
     }
 
     @Bean
@@ -52,6 +55,7 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2
+                .bearerTokenResolver(bearerTokenResolver())
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(keycloakJwtAuthenticationConverter))
             );
 
@@ -59,18 +63,30 @@ public class SecurityConfig {
     }
 
     @Bean
+    public org.springframework.security.oauth2.server.resource.web.BearerTokenResolver bearerTokenResolver() {
+        org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver resolver =
+                new org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver();
+        resolver.setAllowUriQueryParameter(true);
+        return request -> {
+            String token = resolver.resolve(request);
+            if (token == null) {
+                String queryToken = request.getParameter("token");
+                if (queryToken != null && !queryToken.isBlank()) {
+                    return queryToken.trim();
+                }
+            }
+            return token;
+        };
+    }
+
+    @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(
-            "http://localhost:3001",
-            "http://localhost:3000",
-            "http://127.0.0.1:3001",
-            "http://127.0.0.1:3000",
-            "http://localhost:8080",
-            "http://localhost:8081",
-            "http://127.0.0.1:8080",
-            "http://127.0.0.1:8081"
-        ));
+        List<String> origins = new java.util.ArrayList<>(java.util.Arrays.stream(allowedOriginsStr.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toList());
+        configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(List.of(
             "GET",
             "POST",

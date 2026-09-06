@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 !.env.production.example
+jitsi/.env*
+!jitsi/.env.jitsi.example
 
 # Node / Next.js
 node_modules/

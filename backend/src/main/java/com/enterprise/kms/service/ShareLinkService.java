@@ -29,6 +29,8 @@ public class ShareLinkService {
     private final DocumentRepository documentRepository;
     private final PermissionService permissionService;
     private final SecureRandom secureRandom = new SecureRandom();
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder =
+            new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
 
     public ShareLinkService(ShareLinkRepository shareLinkRepository,
                             DocumentRepository documentRepository,
@@ -57,7 +59,7 @@ public class ShareLinkService {
         link.setCreatedAt(OffsetDateTime.now());
 
         if (password != null && !password.isBlank()) {
-            link.setPasswordHash(sha256(password));
+            link.setPasswordHash(passwordEncoder.encode(password.trim()));
         }
 
         link = shareLinkRepository.save(link);
@@ -72,7 +74,7 @@ public class ShareLinkService {
         return result;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Map<String, Object> validateShareLink(String token, String password) {
         String tokenHash = sha256(token);
         ShareLink link = shareLinkRepository.findByTokenHash(tokenHash)
@@ -83,7 +85,23 @@ public class ShareLinkService {
         }
 
         if (link.getPasswordHash() != null && !link.getPasswordHash().isEmpty()) {
-            if (password == null || !sha256(password).equals(link.getPasswordHash())) {
+            if (password == null || password.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid password for this share link");
+            }
+            String stored = link.getPasswordHash();
+            boolean matches = false;
+            // Check if legacy SHA-256 (64 hex characters) and upgrade to BCrypt
+            if (stored.length() == 64 && sha256(password.trim()).equalsIgnoreCase(stored)) {
+                matches = true;
+                try {
+                    link.setPasswordHash(passwordEncoder.encode(password.trim()));
+                    shareLinkRepository.save(link);
+                } catch (Exception ignored) {}
+            } else if (passwordEncoder.matches(password.trim(), stored)) {
+                matches = true;
+            }
+
+            if (!matches) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid password for this share link");
             }
         }

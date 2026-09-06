@@ -1,8 +1,11 @@
 package com.enterprise.kms.service;
 
+import com.enterprise.kms.dto.DiscussionAttachmentDTO;
+import com.enterprise.kms.entity.DiscussionAttachment;
 import com.enterprise.kms.entity.DiscussionReply;
 import com.enterprise.kms.entity.DiscussionTopic;
 import com.enterprise.kms.entity.User;
+import com.enterprise.kms.repository.DiscussionAttachmentRepository;
 import com.enterprise.kms.repository.DiscussionReplyRepository;
 import com.enterprise.kms.repository.DiscussionTopicRepository;
 import com.enterprise.kms.repository.UserRepository;
@@ -23,16 +26,30 @@ public class DiscussionService {
     private final DiscussionReplyRepository replyRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final DiscussionAttachmentRepository attachmentRepository;
+    private final DiscussionMediaService mediaService;
     private final Map<UUID, Map<String, OffsetDateTime>> topicUserViews = new ConcurrentHashMap<>();
 
     public DiscussionService(DiscussionTopicRepository topicRepository,
                              DiscussionReplyRepository replyRepository,
                              UserRepository userRepository,
                              NotificationService notificationService) {
+        this(topicRepository, replyRepository, userRepository, notificationService, null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DiscussionService(DiscussionTopicRepository topicRepository,
+                             DiscussionReplyRepository replyRepository,
+                             UserRepository userRepository,
+                             NotificationService notificationService,
+                             DiscussionAttachmentRepository attachmentRepository,
+                             DiscussionMediaService mediaService) {
         this.topicRepository = topicRepository;
         this.replyRepository = replyRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.attachmentRepository = attachmentRepository;
+        this.mediaService = mediaService;
     }
 
     @Transactional
@@ -43,8 +60,19 @@ public class DiscussionService {
         if (title == null || title.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Topic title is required");
         }
-        if (description == null || description.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Topic description is required");
+
+        List<?> attachmentIdsRaw = (List<?>) body.get("attachmentIds");
+        List<UUID> attachmentIds = new ArrayList<>();
+        if (attachmentIdsRaw != null) {
+            for (Object o : attachmentIdsRaw) {
+                if (o != null && !o.toString().isBlank()) {
+                    attachmentIds.add(UUID.fromString(o.toString().trim()));
+                }
+            }
+        }
+
+        if ((description == null || description.isBlank()) && attachmentIds.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Topic description or attachment is required");
         }
 
         User author = userRepository.findByUsername(username)
@@ -53,12 +81,20 @@ public class DiscussionService {
 
         DiscussionTopic topic = new DiscussionTopic();
         topic.setTitle(title.trim());
-        topic.setDescription(sanitizeHtml(description));
+        topic.setDescription(sanitizeHtml(description != null ? description : ""));
         topic.setStatus("OPEN");
         topic.setAuthor(author);
         topic.setAuthorUsername(username);
 
         DiscussionTopic savedTopic = topicRepository.save(topic);
+
+        // Link any attachments provided
+        for (UUID attId : attachmentIds) {
+            attachmentRepository.findById(attId).ifPresent(att -> {
+                att.setDiscussion(savedTopic);
+                attachmentRepository.save(att);
+            });
+        }
 
         // Broadcast notification for new discussion topic to all users
         try {
@@ -137,8 +173,19 @@ public class DiscussionService {
         }
 
         String content = (String) body.get("content");
-        if (content == null || content.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Reply content cannot be empty");
+        List<?> attachmentIdsRaw = (List<?>) body.get("attachmentIds");
+        List<UUID> attachmentIds = new ArrayList<>();
+        if (attachmentIdsRaw != null) {
+            for (Object o : attachmentIdsRaw) {
+                if (o != null && !o.toString().isBlank()) {
+                    attachmentIds.add(UUID.fromString(o.toString().trim()));
+                }
+            }
+        }
+
+        boolean hasAttachments = !attachmentIds.isEmpty();
+        if ((content == null || content.isBlank()) && !hasAttachments) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Reply content or attachment is required");
         }
 
         User author = userRepository.findByUsername(username)
@@ -147,7 +194,7 @@ public class DiscussionService {
 
         DiscussionReply reply = new DiscussionReply();
         reply.setTopic(topic);
-        reply.setContent(sanitizeHtml(content));
+        reply.setContent(sanitizeHtml(content != null ? content : ""));
         reply.setAuthor(author);
         reply.setAuthorUsername(username);
 
@@ -171,10 +218,36 @@ public class DiscussionService {
 
         DiscussionReply savedReply = replyRepository.save(reply);
 
+        // Link attachments to this reply
+        for (UUID attId : attachmentIds) {
+            attachmentRepository.findByIdAndDiscussionId(attId, topicId).ifPresent(att -> {
+                att.setReply(savedReply);
+                attachmentRepository.save(att);
+            });
+        }
+
         // Broadcast notification for new discussion reply/text to all users
         try {
             String notifTitle = "New Message in Discussion: " + topic.getTitle();
-            String snippet = content.length() > 80 ? content.substring(0, 80) + "..." : content;
+            String snippet;
+            if (content != null && !content.isBlank()) {
+                snippet = content.length() > 80 ? content.substring(0, 80) + "..." : content;
+                if (hasAttachments) {
+                    snippet += " [Attachment]";
+                }
+            } else {
+                List<DiscussionAttachmentDTO> replyAtts = mediaService.getReplyAttachments(savedReply.getId());
+                if (!replyAtts.isEmpty()) {
+                    DiscussionAttachmentDTO first = replyAtts.get(0);
+                    if ("AUDIO".equalsIgnoreCase(first.getMediaType())) {
+                        snippet = "[Voice Note" + (first.getDurationSeconds() > 0 ? ": " + first.getDurationSeconds() + "s]" : "]");
+                    } else {
+                        snippet = "[Image Attachment]";
+                    }
+                } else {
+                    snippet = "[Attachment]";
+                }
+            }
             String notifMessage = username + ": \"" + snippet + "\"";
             List<User> allUsers = userRepository.findAll();
             for (User u : allUsers) {
@@ -245,6 +318,7 @@ public class DiscussionService {
         res.put("createdAt", topic.getCreatedAt());
         res.put("updatedAt", topic.getUpdatedAt());
         res.put("replyCount", replyRepository.countByTopicId(topic.getId()));
+        res.put("attachments", mediaService != null ? mediaService.getTopicAttachments(topic.getId()) : Collections.emptyList());
         return res;
     }
 
@@ -258,6 +332,7 @@ public class DiscussionService {
         res.put("authorId", reply.getAuthor() != null ? reply.getAuthor().getId() : null);
         res.put("createdAt", reply.getCreatedAt());
         res.put("updatedAt", reply.getUpdatedAt());
+        res.put("attachments", mediaService != null ? mediaService.getReplyAttachments(reply.getId()) : Collections.emptyList());
         return res;
     }
 

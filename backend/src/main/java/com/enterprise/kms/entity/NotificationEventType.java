@@ -35,6 +35,14 @@ public final class NotificationEventType {
     public static final String KT_ATTENDANCE_UPDATED = "KT_ATTENDANCE_UPDATED";
     public static final String KT_EXIT_CLEARANCE = "KT_EXIT_CLEARANCE";
     public static final String KT_FINAL_CLEARANCE = "KT_FINAL_CLEARANCE";
+    public static final String KT_DOCUMENTS_ATTACHED = "KT_DOCUMENTS_ATTACHED";
+    public static final String KT_ASSET_ASSIGNED = "KT_ASSET_ASSIGNED";
+    public static final String KT_ACCESS_REVIEW_UPDATED = "KT_ACCESS_REVIEW_UPDATED";
+    public static final String KT_SUCCESSOR_ACCEPTANCE_REQUIRED = "KT_SUCCESSOR_ACCEPTANCE_REQUIRED";
+    public static final String KT_SUCCESSOR_ACCEPTED = "KT_SUCCESSOR_ACCEPTED";
+    public static final String KT_MANAGER_APPROVED = "KT_MANAGER_APPROVED";
+    public static final String KT_HR_APPROVED = "KT_HR_APPROVED";
+    public static final String KT_ACCESS_REVOKED = "KT_ACCESS_REVOKED";
 
     // HR events
     public static final String HR_PROFILE_UPDATED = "HR_PROFILE_UPDATED";
@@ -60,4 +68,9 @@ public final class NotificationEventType {
     // Blog & Discussion events
     public static final String BLOG_COMMENT_ADDED = "BLOG_COMMENT_ADDED";
     public static final String BLOG_REPLY_ADDED = "BLOG_REPLY_ADDED";
+    public static final String VIDEO_SESSION_CREATED = "VIDEO_SESSION_CREATED";
+    public static final String VIDEO_SESSION_INVITED = "VIDEO_SESSION_INVITED";
+    public static final String VIDEO_SESSION_SCHEDULED = "VIDEO_SESSION_SCHEDULED";
+    public static final String VIDEO_SESSION_STARTED = "VIDEO_SESSION_STARTED";
+    public static final String VIDEO_SESSION_ENDED = "VIDEO_SESSION_ENDED";
 }

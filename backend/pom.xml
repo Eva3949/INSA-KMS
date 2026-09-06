@@ -101,7 +101,10 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <fork>true</fork>
+                    <systemPropertyVariables>
+                        <kms.meeting.jwt-secret>production-grade-secure-secret-minimum-32-chars-entropy-runtime!</kms.meeting.jwt-secret>
+                        <kms.meeting.jitsi-domain>localhost:8443</kms.meeting.jitsi-domain>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>

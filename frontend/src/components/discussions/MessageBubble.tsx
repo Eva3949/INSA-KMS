@@ -2,7 +2,28 @@
 
 import React, { useState } from 'react';
 import { MessageAvatar } from './MessageAvatar';
-import { CornerDownRight, Trash2, Check, CheckCheck, FileText } from 'lucide-react';
+import { CornerDownRight, Trash2, Check, CheckCheck } from 'lucide-react';
+import { VoicePlayer } from './VoicePlayer';
+import { ImageViewerModal } from './ImageViewerModal';
+import { AuthenticatedImage } from './AuthenticatedImage';
+import { getAuthenticatedMediaUrl } from '@/src/lib/api';
+
+
+export interface ChatAttachment {
+  id: string;
+  discussionId: string;
+  replyId?: string | null;
+  mediaType: 'IMAGE' | 'AUDIO';
+  mimeType: string;
+  originalFilename: string;
+  objectKey: string;
+  fileSizeBytes: number;
+  durationSeconds?: number;
+  viewUrl: string;
+  downloadUrl: string;
+  uploadedBy: string;
+  createdAt: string;
+}
 
 export interface ChatMessage {
   id: string;
@@ -14,6 +35,7 @@ export interface ChatMessage {
   createdAt: string;
   isTopicOrigin?: boolean;
   isRead?: boolean;
+  attachments?: ChatAttachment[];
 }
 
 interface MessageBubbleProps {
@@ -36,6 +58,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   canDelete = false,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; filename: string } | null>(null);
 
   const formattedTime = new Date(message.createdAt).toLocaleTimeString([], {
     hour: 'numeric',
@@ -93,6 +116,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     return <span className="whitespace-pre-wrap break-words">{content}</span>;
   };
 
+  const imageAttachments = message.attachments?.filter((a) => a.mediaType === 'IMAGE') || [];
+  const audioAttachments = message.attachments?.filter((a) => a.mediaType === 'AUDIO') || [];
+
   return (
     <div
       className={`group relative flex items-start gap-2.5 my-2.5 transition-all ${
@@ -142,10 +168,52 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           </div>
         )}
 
-        {/* Message Body Content */}
-        <div className="leading-relaxed text-slate-800 font-normal">
-          {renderContent(message.content)}
-        </div>
+        {/* Image Attachments */}
+        {imageAttachments.length > 0 && (
+          <div className="my-2 space-y-2">
+            {imageAttachments.map((img) => (
+              <div key={img.id} className="relative inline-block">
+                <div
+                  onClick={() => setLightboxImage({ src: getAuthenticatedMediaUrl(img.viewUrl), filename: img.originalFilename })}
+                  className="cursor-pointer group/img relative inline-block max-w-sm rounded-xl overflow-hidden border border-slate-200/80 shadow-xs hover:shadow-md transition-all"
+                >
+                  <AuthenticatedImage
+                    src={img.viewUrl}
+                    alt={img.originalFilename}
+                    imgClassName="max-h-60 sm:max-h-72 w-auto object-cover rounded-xl transition-transform duration-200 group-hover/img:scale-[1.02]"
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/25 transition-colors flex items-end p-2 opacity-0 group-hover/img:opacity-100 pointer-events-none">
+                    <span className="text-[10px] text-white bg-black/70 backdrop-blur-xs px-2 py-0.5 rounded-md truncate max-w-full font-medium">
+                      {img.originalFilename} ({(img.fileSizeBytes / 1024).toFixed(0)} KB)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Voice Note Attachments */}
+        {audioAttachments.length > 0 && (
+          <div className="my-2 space-y-1.5">
+            {audioAttachments.map((audio) => (
+              <VoicePlayer
+                key={audio.id}
+                src={getAuthenticatedMediaUrl(audio.viewUrl)}
+                durationSeconds={audio.durationSeconds}
+                filename={audio.originalFilename}
+                isOutgoing={isOutgoing}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Message Body Content (if any) */}
+        {message.content && (
+          <div className="leading-relaxed text-slate-800 font-normal">
+            {renderContent(message.content)}
+          </div>
+        )}
 
         {/* Bubble Timestamp & Status */}
         <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-400 select-none">
@@ -187,6 +255,16 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           </div>
         )}
       </div>
+
+      {/* Lightbox Modal */}
+      {lightboxImage && (
+        <ImageViewerModal
+          isOpen={Boolean(lightboxImage)}
+          src={lightboxImage.src}
+          filename={lightboxImage.filename}
+          onClose={() => setLightboxImage(null)}
+        />
+      )}
     </div>
   );
 };

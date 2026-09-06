@@ -10,6 +10,9 @@ import { DiscussionHeader } from '@/src/components/discussions/DiscussionHeader'
 import { MessageBubble, ChatMessage } from '@/src/components/discussions/MessageBubble';
 import { MessageComposer } from '@/src/components/discussions/MessageComposer';
 import { DateSeparator } from '@/src/components/discussions/DateSeparator';
+import { VideoSessionBanner } from '@/src/components/discussions/VideoSessionBanner';
+import { CreateVideoSessionModal } from '@/src/components/discussions/CreateVideoSessionModal';
+import { VirtualVideoRoomModal } from '@/src/components/discussions/VirtualVideoRoomModal';
 import { AlertTriangle, MessageSquare } from 'lucide-react';
 
 export default function DiscussionDetailPage() {
@@ -23,6 +26,11 @@ export default function DiscussionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [submittingReply, setSubmittingReply] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Virtual Video Discussion State
+  const [videoSessions, setVideoSessions] = useState<any[]>([]);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [activeRoomSessionId, setActiveRoomSessionId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -41,9 +49,22 @@ export default function DiscussionDetailPage() {
     }
   }, [topicId]);
 
+  const fetchVideoSessions = useCallback(async () => {
+    if (!topicId) return;
+    try {
+      const list = await kmsApi.discussions.listVideoSessions(topicId);
+      setVideoSessions(list || []);
+    } catch {
+      // Keep existing sessions list on transient error
+    }
+  }, [topicId]);
+
   useEffect(() => {
     fetchTopicDetail();
-  }, [fetchTopicDetail]);
+    fetchVideoSessions();
+    const interval = setInterval(fetchVideoSessions, 8000);
+    return () => clearInterval(interval);
+  }, [fetchTopicDetail, fetchVideoSessions]);
 
   // Scroll to bottom when messages finish loading or update
   useEffect(() => {
@@ -75,8 +96,8 @@ export default function DiscussionDetailPage() {
     }
   };
 
-  const handleSendReply = async (content: string, parentReplyId?: string) => {
-    if (!content.trim() || !topic) return;
+  const handleSendReply = async (content: string, parentReplyId?: string, media?: any) => {
+    if ((!content.trim() && !media) || !topic) return;
 
     if (topic.status === 'CLOSED') {
       alert('Cannot reply to a closed discussion topic.');
@@ -85,10 +106,26 @@ export default function DiscussionDetailPage() {
 
     setSubmittingReply(true);
     try {
+      let attachmentId: string | undefined = undefined;
+
+      // If media is attached, upload it to discussion media endpoint
+      if (media?.file) {
+        const uploaded = await kmsApi.discussions.uploadMedia(
+          topicId,
+          media.file,
+          undefined,
+          media.mediaType,
+          media.durationSeconds,
+          media.filename
+        );
+        attachmentId = uploaded.id;
+      }
+
       await kmsApi.discussions.addReply(topicId, {
         content: content.trim(),
         parentReplyId: parentReplyId || undefined,
-      });
+        attachmentIds: attachmentId ? [attachmentId] : undefined,
+      } as any);
       setReplyingToMessage(null);
 
       // Refresh topic messages
@@ -148,6 +185,7 @@ export default function DiscussionDetailPage() {
     createdAt: topic.createdAt,
     isTopicOrigin: true,
     isRead: topic.isRead ?? false,
+    attachments: topic.attachments || [],
   };
 
   const replyMessages: ChatMessage[] = (topic.replies || []).map((r: any) => ({
@@ -159,6 +197,7 @@ export default function DiscussionDetailPage() {
     authorId: r.authorId,
     createdAt: r.createdAt,
     isRead: r.isRead ?? false,
+    attachments: r.attachments || [],
   }));
 
   const allMessages: ChatMessage[] = [topicOriginMessage, ...replyMessages].sort(
@@ -170,15 +209,26 @@ export default function DiscussionDetailPage() {
     return allMessages.find((m) => m.id === parentId) || null;
   };
 
+  const activeSessionsCount = videoSessions.filter((s) => s.status === 'ACTIVE').length;
+
   return (
     <AppShell>
-      <div className="flex flex-col h-[calc(100vh-4rem)] bg-[#eef4f8] -m-4 sm:-m-6 overflow-hidden">
+      <div className="flex flex-col h-[calc(100vh-4rem)] bg-[#eef4f8] -m-4 sm:-m-6 overflow-hidden relative">
         {/* Telegram Header */}
         <DiscussionHeader
           topic={topic}
           isAuthorOrAdmin={isAuthorOrAdmin}
+          activeSessionCount={activeSessionsCount}
           onToggleStatus={handleToggleStatus}
           onDeleteTopic={handleDeleteTopic}
+          onOpenVideoModal={() => {
+            const active = videoSessions.find((s) => s.status === 'ACTIVE');
+            if (active) {
+              setActiveRoomSessionId(active.id);
+            } else {
+              setIsCreateModalOpen(true);
+            }
+          }}
         />
 
         {/* Telegram Chat Conversation Area */}
@@ -187,6 +237,17 @@ export default function DiscussionDetailPage() {
           className="flex-1 overflow-y-auto px-4 py-4 sm:px-8 space-y-2 bg-[#eef4f8] bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:20px_20px]"
         >
           <div className="max-w-4xl mx-auto flex flex-col justify-end min-h-full pb-2">
+            {/* Virtual Video Discussion Live/Upcoming Status Banner */}
+            {videoSessions.length > 0 && (
+              <div className="mb-3">
+                <VideoSessionBanner
+                  sessions={videoSessions}
+                  onJoinSession={(sId) => setActiveRoomSessionId(sId)}
+                  onOpenCreateModal={() => setIsCreateModalOpen(true)}
+                />
+              </div>
+            )}
+
             {allMessages.map((msg, index) => {
               const isOutgoing = msg.author === currentUsername;
               const parentMsg = getParentMessage(msg.parentReplyId);
@@ -232,6 +293,36 @@ export default function DiscussionDetailPage() {
           isClosed={isClosed}
           submitting={submittingReply}
         />
+
+        {/* Create/Schedule Video Session Modal */}
+        <CreateVideoSessionModal
+          discussionId={topicId}
+          discussionTitle={topic?.title || ''}
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          onCreated={(created) => {
+            fetchVideoSessions();
+            if (created.status === 'ACTIVE') {
+              setActiveRoomSessionId(created.id);
+            }
+          }}
+        />
+
+        {/* Virtual Video Conference Room Modal */}
+        {activeRoomSessionId && (
+          <VirtualVideoRoomModal
+            sessionId={activeRoomSessionId}
+            isOpen={Boolean(activeRoomSessionId)}
+            onClose={() => {
+              setActiveRoomSessionId(null);
+              fetchVideoSessions();
+            }}
+            onSessionEnded={() => {
+              setActiveRoomSessionId(null);
+              fetchVideoSessions();
+            }}
+          />
+        )}
       </div>
     </AppShell>
   );

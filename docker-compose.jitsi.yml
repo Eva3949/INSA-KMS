@@ -1,0 +1,124 @@
+version: '3.8'
+
+# =============================================================================
+# INSA KMS — Production-Ready Self-Hosted Jitsi Meet & Prosody JWT Architecture
+# Classified / Controlled / Air-Gapped Internal Network Deployment
+#
+# Pinned Version: stable-9584
+# Mandatory Security:
+#   - ENABLE_AUTH=1, AUTH_TYPE=jwt
+#   - JWT_ALLOW_EMPTY=0 (Rejects any admission attempt without valid JWT)
+#   - ENABLE_GUESTS=0 (Disables guest/anonymous access)
+#   - DISABLE_THIRD_PARTY_REQUESTS=true (Zero external CDN/STUN leakage)
+# =============================================================================
+
+services:
+  jitsi-web:
+    image: jitsi/web:stable-9584
+    container_name: kms-jitsi-web
+    restart: unless-stopped
+    ports:
+      - "${JITSI_HTTPS_PORT:-8443}:443"
+      - "${JITSI_HTTP_PORT:-8088}:80"
+    volumes:
+      - jitsi_web_config:/config
+      - ./jitsi/web/custom-config.js:/defaults/custom-config.js:ro
+      - ./certs/fullchain.crt:/config/keys/cert.crt:ro
+      - ./certs/jitsi.key:/config/keys/cert.key:ro
+    environment:
+      - ENABLE_AUTH=1
+      - AUTH_TYPE=jwt
+      - JWT_APP_ID=${KMS_JITSI_JWT_APP_ID:-insa-kms-video}
+      - JWT_APP_SECRET=${KMS_JITSI_JWT_SECRET}
+      - JWT_ACCEPTED_ISSUERS=${KMS_JITSI_JWT_APP_ID:-insa-kms-video}
+      - JWT_ACCEPTED_AUDIENCES=${KMS_JITSI_JWT_APP_ID:-insa-kms-video}
+      - JWT_ALLOW_EMPTY=0
+      - ENABLE_GUESTS=0
+      - PUBLIC_URL=${KMS_JITSI_PUBLIC_URL:-https://jitsi.kms.internal:8443}
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_SERVER=jitsi-prosody
+      - XMPP_BOSH_URL_BASE=http://jitsi-prosody:5280
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - DISABLE_THIRD_PARTY_REQUESTS=true
+    depends_on:
+      - jitsi-prosody
+    networks:
+      - jitsi-internal-net
+
+  jitsi-prosody:
+    image: jitsi/prosody:stable-9584
+    container_name: kms-jitsi-prosody
+    restart: unless-stopped
+    environment:
+      - ENABLE_AUTH=1
+      - AUTH_TYPE=jwt
+      - JWT_APP_ID=${KMS_JITSI_JWT_APP_ID:-insa-kms-video}
+      - JWT_APP_SECRET=${KMS_JITSI_JWT_SECRET}
+      - JWT_ACCEPTED_ISSUERS=${KMS_JITSI_JWT_APP_ID:-insa-kms-video}
+      - JWT_ACCEPTED_AUDIENCES=${KMS_JITSI_JWT_APP_ID:-insa-kms-video}
+      - JWT_ALLOW_EMPTY=0
+      - ENABLE_GUESTS=0
+      - PUBLIC_URL=${KMS_JITSI_PUBLIC_URL:-https://jitsi.kms.internal:8443}
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-JicofoComponentSecret9981!}
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-JvbComponentSecret9981!}
+    volumes:
+      - jitsi_prosody_config:/config
+    networks:
+      - jitsi-internal-net
+
+  jitsi-jicofo:
+    image: jitsi/jicofo:stable-9584
+    container_name: kms-jitsi-jicofo
+    restart: unless-stopped
+    environment:
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_SERVER=jitsi-prosody
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - JICOFO_AUTH_USER=focus
+      - JICOFO_AUTH_PASSWORD=${JICOFO_AUTH_PASSWORD:-JicofoComponentSecret9981!}
+      - JICOFO_ENABLE_BRIDGE_PRESENCE=true
+    depends_on:
+      - jitsi-prosody
+    volumes:
+      - jitsi_jicofo_config:/config
+    networks:
+      - jitsi-internal-net
+
+  jitsi-jvb:
+    image: jitsi/jvb:stable-9584
+    container_name: kms-jitsi-jvb
+    restart: unless-stopped
+    ports:
+      - "${JVB_PORT:-10000}:10000/udp"
+    environment:
+      - XMPP_SERVER=jitsi-prosody
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - JVB_AUTH_USER=jvb
+      - JVB_AUTH_PASSWORD=${JVB_AUTH_PASSWORD:-JvbComponentSecret9981!}
+      - DOCKER_HOST_ADDRESS=${JVB_ADVERTISED_IP:-127.0.0.1}
+      - JVB_PORT=10000
+      - ENABLE_COLIBRI_WEBSOCKET=0
+      - DISABLE_THIRD_PARTY_REQUESTS=true
+    depends_on:
+      - jitsi-prosody
+    volumes:
+      - jitsi_jvb_config:/config
+    networks:
+      - jitsi-internal-net
+
+volumes:
+  jitsi_web_config:
+  jitsi_prosody_config:
+  jitsi_jicofo_config:
+  jitsi_jvb_config:
+
+networks:
+  jitsi-internal-net:
+    driver: bridge

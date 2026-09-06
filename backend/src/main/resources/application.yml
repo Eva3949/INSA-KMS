@@ -17,8 +17,8 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:${DATABASE_PASSWORD:${DB_PASS:hLYoKjsf0GlpZbKCNfSDZ8aRGoR0oMYS}}}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 5
-      minimum-idle: 1
+      maximum-pool-size: ${DB_POOL_MAX:25}
+      minimum-idle: ${DB_POOL_MIN:5}
       idle-timeout: 60000
       max-lifetime: 120000
       connection-timeout: 30000
@@ -88,6 +88,15 @@ kms:
     enabled: ${KMS_KEYCLOAK_ENABLED:true}
     base-url: ${KEYCLOAK_URL:http://localhost:8080}
     realm: ${KEYCLOAK_REALM:kms-realm}
-    admin-username: ${KEYCLOAK_ADMIN_USER:evadevstudio@gmail.com}
-    admin-password: ${KEYCLOAK_ADMIN_PASSWORD:eva@3949}
+    admin-username: ${KEYCLOAK_ADMIN_USER:admin}
+    admin-password: ${KEYCLOAK_ADMIN_PASSWORD:admin}
     admin-client-id: admin-cli
+
+  # ---------------------------------------------------------------------------
+  # Self-Hosted Jitsi Meet & Prosody JWT Security Configuration
+  # ---------------------------------------------------------------------------
+  meeting:
+    jitsi-domain: ${KMS_JITSI_DOMAIN:jitsi.kms.internal}
+    jwt-app-id: ${KMS_JITSI_JWT_APP_ID:insa-kms-video}
+    jwt-secret: ${KMS_JITSI_JWT_SECRET:}
+    jwt-expiration-seconds: ${KMS_JITSI_JWT_EXP_SECONDS:300}

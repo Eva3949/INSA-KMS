@@ -7,15 +7,25 @@ const PUBLIC_PATHS = [
   '/auth/callback',
   '/_next',
   '/images',
+  '/icons',
   '/favicon.ico',
+  '/manifest.json',
+  '/manifest.webmanifest',
+  '/sw.js',
+  '/offline.html',
   '/api',
 ];
 
 function isPublicPath(pathname: string): boolean {
-  if (pathname.startsWith('/_next') || pathname.startsWith('/images') || pathname.startsWith('/api')) {
+  if (
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/images') ||
+    pathname.startsWith('/icons') ||
+    pathname.startsWith('/api')
+  ) {
     return true;
   }
-  if (/\.(?:svg|png|jpg|jpeg|gif|webp|css|js|ico|woff|woff2|ttf|eot)$/i.test(pathname)) {
+  if (/\.(?:svg|png|jpg|jpeg|gif|webp|css|js|ico|woff|woff2|ttf|eot|json|html|webmanifest)$/i.test(pathname)) {
     return true;
   }
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
@@ -43,6 +53,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|_next/data|images|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|css|js)$).*)',
+    '/((?!_next/static|_next/image|_next/data|images|icons|manifest\\.json|sw\\.js|offline\\.html|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|css|js|json|html|webmanifest)$).*)',
   ],
 };

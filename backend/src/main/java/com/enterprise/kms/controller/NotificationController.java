@@ -51,7 +51,7 @@ public class NotificationController {
         return ResponseEntity.ok(Map.of("status", "READ"));
     }
 
-    @PostMapping("/read-all")
+    @RequestMapping(value = "/read-all", method = {RequestMethod.POST, RequestMethod.PUT})
     @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_COMPLIANCE_OFFICER', 'ROLE_IT_SECURITY', 'ROLE_ADMIN')")
     public ResponseEntity<Map<String, Object>> markAllRead() {
         UUID userId = resolveUserId();

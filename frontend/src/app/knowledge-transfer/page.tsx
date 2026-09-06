@@ -13,6 +13,7 @@ import { LoadingState, ErrorState } from '@/src/components/ui/States';
 import { Badge } from '@/src/components/ui/Badge';
 import { Alert } from '@/src/components/ui/Alert';
 import { kmsApi } from '@/src/lib/api';
+import { useAuth } from '@/src/lib/auth-context';
 import {
   GitPullRequestArrow,
   Plus,
@@ -25,7 +26,8 @@ import {
   ArrowRight,
   ShieldCheck,
   Building,
-  Filter
+  Filter,
+  FileText
 } from 'lucide-react';
 
 interface TransferCase {
@@ -47,6 +49,10 @@ interface TransferCase {
 
 export default function KnowledgeTransferDashboardPage() {
   const router = useRouter();
+  const { roles } = useAuth();
+  const isViewerOnly = roles.includes('ROLE_VIEWER') && !roles.some(r =>
+    ['ROLE_SUPER_ADMIN', 'ROLE_ADMIN', 'ROLE_CONTENT_OWNER', 'ROLE_CONTRIBUTOR', 'ROLE_COMPLIANCE_OFFICER', 'ROLE_IT_SECURITY'].includes(r)
+  );
   const [cases, setCases] = useState<TransferCase[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -71,6 +77,84 @@ export default function KnowledgeTransferDashboardPage() {
   const [priority, setPriority] = useState('MEDIUM');
   const [expectedDate, setExpectedDate] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Document Discovery State
+  const [discoveredDocs, setDiscoveredDocs] = useState<any[]>([]);
+  const [isLoadingDocs, setIsLoadingDocs] = useState(false);
+  const [selectedDocsMap, setSelectedDocsMap] = useState<Record<string, { selected: boolean; transferAction: string; notes?: string }>>({});
+
+  useEffect(() => {
+    if (!employeeId) {
+      setDiscoveredDocs([]);
+      setSelectedDocsMap({});
+      return;
+    }
+
+    setIsLoadingDocs(true);
+    kmsApi.knowledgeTransfer.getEmployeeAuthoredDocuments(employeeId)
+      .then((docs) => {
+        setDiscoveredDocs(docs || []);
+        const map: Record<string, { selected: boolean; transferAction: string; notes?: string }> = {};
+        (docs || []).forEach((d: any) => {
+          map[d.id] = { selected: false, transferAction: 'REFERENCE', notes: '' };
+        });
+        setSelectedDocsMap(map);
+      })
+      .catch((err) => {
+        console.error('Failed to discover employee documents', err);
+        setDiscoveredDocs([]);
+        setSelectedDocsMap({});
+      })
+      .finally(() => setIsLoadingDocs(false));
+  }, [employeeId]);
+
+  const handleSelectAllDocs = () => {
+    setSelectedDocsMap((prev) => {
+      const next = { ...prev };
+      discoveredDocs.forEach((d) => {
+        next[d.id] = {
+          selected: true,
+          transferAction: next[d.id]?.transferAction || 'REFERENCE',
+          notes: next[d.id]?.notes || '',
+        };
+      });
+      return next;
+    });
+  };
+
+  const handleClearAllDocs = () => {
+    setSelectedDocsMap((prev) => {
+      const next = { ...prev };
+      discoveredDocs.forEach((d) => {
+        if (next[d.id]) {
+          next[d.id] = { ...next[d.id], selected: false };
+        }
+      });
+      return next;
+    });
+  };
+
+  const handleToggleDoc = (docId: string) => {
+    setSelectedDocsMap((prev) => ({
+      ...prev,
+      [docId]: {
+        selected: !prev[docId]?.selected,
+        transferAction: prev[docId]?.transferAction || 'REFERENCE',
+        notes: prev[docId]?.notes || '',
+      },
+    }));
+  };
+
+  const handleDocActionChange = (docId: string, action: string) => {
+    setSelectedDocsMap((prev) => ({
+      ...prev,
+      [docId]: {
+        selected: prev[docId]?.selected ?? true,
+        transferAction: action,
+        notes: prev[docId]?.notes || '',
+      },
+    }));
+  };
 
   const loadCases = useCallback(() => {
     setIsLoading(true);
@@ -107,6 +191,14 @@ export default function KnowledgeTransferDashboardPage() {
       return;
     }
 
+    const selectedDocuments = Object.entries(selectedDocsMap)
+      .filter(([_, v]) => v.selected)
+      .map(([docId, v]) => ({
+        documentId: docId,
+        transferAction: v.transferAction || 'REFERENCE',
+        notes: v.notes || undefined,
+      }));
+
     setIsSaving(true);
     setError(null);
     try {
@@ -120,6 +212,7 @@ export default function KnowledgeTransferDashboardPage() {
         priority,
         expectedCompletionDate: expectedDate || undefined,
         notes: notes || undefined,
+        selectedDocuments: selectedDocuments.length > 0 ? selectedDocuments : undefined,
       });
 
       setNotice('Knowledge Transfer Case initiated successfully.');
@@ -146,6 +239,8 @@ export default function KnowledgeTransferDashboardPage() {
     setPriority('MEDIUM');
     setExpectedDate('');
     setNotes('');
+    setDiscoveredDocs([]);
+    setSelectedDocsMap({});
   };
 
   // Status Metrics
@@ -192,14 +287,16 @@ export default function KnowledgeTransferDashboardPage() {
             </p>
           </div>
 
-          <Button
-            variant="primary"
-            className="flex items-center gap-2 self-start sm:self-auto bg-indigo-600 hover:bg-indigo-700"
-            onClick={() => setIsModalOpen(true)}
-          >
-            <Plus className="w-4 h-4" />
-            Initiate Transfer Case
-          </Button>
+          {!isViewerOnly && (
+            <Button
+              variant="primary"
+              className="flex items-center gap-2 self-start sm:self-auto bg-indigo-600 hover:bg-indigo-700"
+              onClick={() => setIsModalOpen(true)}
+            >
+              <Plus className="w-4 h-4" />
+              Initiate Transfer Case
+            </Button>
+          )}
         </div>
 
         {/* Notices and Alerts */}
@@ -448,6 +545,106 @@ export default function KnowledgeTransferDashboardPage() {
               </div>
             </div>
 
+            {/* Automatic Document Discovery */}
+            {employeeId && (
+              <div className="border border-indigo-100 bg-indigo-50/50 rounded-xl p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-indigo-950 uppercase tracking-wide flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                      Documents authored by {users.find(u => u.id === employeeId)?.fullName || users.find(u => u.id === employeeId)?.username || 'Departing Employee'}
+                    </h4>
+                    <p className="text-xs text-indigo-700 mt-0.5 font-medium">
+                      {isLoadingDocs ? 'Discovering documents...' : `Found: ${discoveredDocs.length} documents`}
+                    </p>
+                  </div>
+                  {discoveredDocs.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSelectAllDocs}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 px-2.5 py-1 bg-white border border-indigo-200 rounded shadow-xs transition-colors"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearAllDocs}
+                        className="text-xs font-bold text-gray-600 hover:text-gray-800 px-2.5 py-1 bg-white border border-gray-200 rounded shadow-xs transition-colors"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {isLoadingDocs ? (
+                  <div className="py-4 text-center text-xs text-gray-500 font-medium">Scanning KMS Document Library for authored documents...</div>
+                ) : discoveredDocs.length === 0 ? (
+                  <div className="p-3 bg-white border border-dashed border-gray-200 rounded-lg text-center text-xs text-gray-500 font-medium">
+                    No active authored documents found for this employee in KMS Document Library.
+                  </div>
+                ) : (
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-1 border border-indigo-100 rounded-lg p-2 bg-white/60">
+                    {discoveredDocs.map((doc) => {
+                      const isChecked = Boolean(selectedDocsMap[doc.id]?.selected);
+                      const currentAction = selectedDocsMap[doc.id]?.transferAction || 'REFERENCE';
+                      return (
+                        <div
+                          key={doc.id}
+                          className={`flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-lg border transition-all gap-2 ${
+                            isChecked
+                              ? 'bg-white border-indigo-300 shadow-xs ring-1 ring-indigo-200'
+                              : 'bg-white/80 border-gray-200 hover:bg-white'
+                          }`}
+                        >
+                          <label className="flex items-start gap-2.5 cursor-pointer flex-1 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleToggleDoc(doc.id)}
+                              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-gray-900 truncate">{doc.title}</p>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                <span className="text-[10px] text-gray-500 font-medium">{doc.documentType || 'Document'}</span>
+                                {doc.confidentialityLevel && (
+                                  <span className="text-[9px] px-1.5 py-0.2 bg-gray-100 text-gray-600 rounded font-bold uppercase">
+                                    {doc.confidentialityLevel}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </label>
+
+                          {isChecked && (
+                            <div className="flex items-center gap-2 pl-6 sm:pl-0 flex-shrink-0">
+                              <label className="text-[10px] font-bold text-gray-500 uppercase">Action:</label>
+                              <select
+                                value={currentAction}
+                                onChange={(e) => handleDocActionChange(doc.id, e.target.value)}
+                                className="text-xs font-semibold px-2 py-1 border border-gray-300 rounded bg-white text-gray-800 focus:ring-1 focus:ring-indigo-500"
+                              >
+                                <option value="REFERENCE">REFERENCE (Shared Context)</option>
+                                <option value="HANDOVER">HANDOVER (Responsibility)</option>
+                                <option value="REASSIGN_AUTHOR">REASSIGN_AUTHOR (To Successor upon Exit)</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {Object.values(selectedDocsMap).some((v) => v.selected && v.transferAction === 'REASSIGN_AUTHOR') && (
+                  <p className="text-[11px] text-indigo-800 bg-indigo-100/70 p-2 rounded-md font-medium">
+                    Note: Documents marked REASSIGN_AUTHOR retain their original author until final successful exit clearance signoff.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-700 uppercase mb-1">
@@ -540,7 +737,11 @@ export default function KnowledgeTransferDashboardPage() {
                 disabled={isSaving}
                 className="bg-indigo-600 hover:bg-indigo-700"
               >
-                {isSaving ? 'Initiating...' : 'Create Case & Seed Checklist'}
+                {isSaving
+                  ? 'Initiating...'
+                  : Object.values(selectedDocsMap).filter((v) => v.selected).length > 0
+                  ? `Start Knowledge Transfer (${Object.values(selectedDocsMap).filter((v) => v.selected).length} Docs)`
+                  : 'Start Knowledge Transfer'}
               </Button>
             </div>
           </form>

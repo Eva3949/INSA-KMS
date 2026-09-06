@@ -38,6 +38,7 @@ import {
 import { UserRole, hasRole } from '@/src/lib/auth';
 import { AuthUser } from '@/src/lib/auth-context';
 import { kmsApi } from '@/src/lib/api';
+import { PwaInstallButton } from '@/src/components/pwa/PwaInstallButton';
 
 interface SidebarProps {
   userRoles: UserRole[];
@@ -97,7 +98,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
         { href: '/blogs', label: 'Blogs & Articles', icon: FileText, role: 'ROLE_VIEWER' },
         { href: '/discussions', label: 'Discussions & Forum', icon: Users, role: 'ROLE_VIEWER' },
         { href: '/articles/create', label: 'Create Knowledge Article', icon: FileText, role: 'ROLE_CONTRIBUTOR' },
-        { href: '/knowledge-transfer', label: 'Knowledge Transfer', icon: GitPullRequestArrow, role: 'ROLE_ADMIN' },
+        { href: '/knowledge-transfer', label: 'Knowledge Transfer', icon: GitPullRequestArrow, role: 'ROLE_VIEWER' },
       ],
     },
     {
@@ -433,6 +434,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
             </div>
           </div>
         ) : null}
+
+        {/* PWA App Install Action */}
+        <PwaInstallButton variant="sidebar" />
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import { Search, Filter, Bookmark, Sparkles, FileText, ArrowUpDown, X } from 'lu
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { kmsApi } from '@/src/lib/api';
+import { sanitizeHtml } from '@/src/lib/sanitize';
 
 interface SearchResult {
   id: string;
@@ -334,7 +335,7 @@ function AdvancedSearchContent() {
 
                     {result.snippet && (
                       <div className="text-xs text-kms-slate-700 bg-kms-slate-50 p-2.5 rounded border border-kms-slate-200 font-sans italic">
-                        <span dangerouslySetInnerHTML={{ __html: result.snippet }} />
+                        <span dangerouslySetInnerHTML={{ __html: sanitizeHtml(result.snippet) }} />
                       </div>
                     )}
 

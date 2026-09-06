@@ -257,6 +257,9 @@ public class DocumentController {
     @GetMapping("/media/{idOrPath:.+}")
     @org.springframework.web.bind.annotation.CrossOrigin(origins = "*")
     public ResponseEntity<org.springframework.core.io.InputStreamResource> streamMedia(@PathVariable("idOrPath") String idOrPath) {
+        if (idOrPath == null || idOrPath.isBlank() || idOrPath.contains("..") || idOrPath.contains("/") || idOrPath.contains("\\") || idOrPath.contains("\0")) {
+            return ResponseEntity.badRequest().build();
+        }
         try {
             String targetPath = idOrPath;
             try {

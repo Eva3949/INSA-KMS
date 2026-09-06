@@ -149,11 +149,22 @@ public class StorageService {
         if (storagePath == null || storagePath.isBlank()) {
             return null;
         }
-        Path candidate = Paths.get(storagePath);
-        if (candidate.isAbsolute()) {
-            return candidate.normalize();
+        if (storagePath.contains("..") || storagePath.contains("\0")) {
+            throw new SecurityException("Invalid path traversal sequence");
         }
-        return this.storageLocation.resolve(storagePath).normalize();
+        Path candidate = Paths.get(storagePath);
+        Path resolved = candidate.isAbsolute()
+                ? candidate.normalize()
+                : this.storageLocation.resolve(storagePath).normalize();
+
+        boolean inStorageRoot = resolved.startsWith(this.storageLocation);
+        boolean inImagesRoot = this.frontendPublicImagesPath != null && resolved.startsWith(this.frontendPublicImagesPath);
+        boolean inVideosRoot = this.frontendPublicVideosPath != null && resolved.startsWith(this.frontendPublicVideosPath);
+
+        if (!inStorageRoot && !inImagesRoot && !inVideosRoot) {
+            throw new SecurityException("Path traversal attempt outside permitted storage roots: " + storagePath);
+        }
+        return resolved;
     }
 
     public boolean exists(String storagePath) {

@@ -59,6 +59,51 @@ public class KnowledgeTransferCase {
     @Column(name = "clearance_status", length = 50)
     private String clearanceStatus = "PENDING"; // PENDING, READY_FOR_CLEARANCE, CLEARED
 
+    @Column(name = "employee_snapshot_name", length = 150)
+    private String employeeSnapshotName;
+
+    @Column(name = "employee_snapshot_title", length = 100)
+    private String employeeSnapshotTitle;
+
+    @Column(name = "employee_snapshot_dept", length = 100)
+    private String employeeSnapshotDept;
+
+    @Column(name = "employee_snapshot_number", length = 50)
+    private String employeeSnapshotNumber;
+
+    @Column(name = "manager_snapshot_name", length = 150)
+    private String managerSnapshotName;
+
+    @Column(name = "exit_date")
+    private LocalDate exitDate;
+
+    @Column(name = "manager_approved")
+    private Boolean managerApproved = false;
+
+    @Column(name = "manager_approved_at")
+    private OffsetDateTime managerApprovedAt;
+
+    @Column(name = "hr_approved")
+    private Boolean hrApproved = false;
+
+    @Column(name = "hr_approved_at")
+    private OffsetDateTime hrApprovedAt;
+
+    @Column(name = "successor_accepted")
+    private Boolean successorAccepted = false;
+
+    @Column(name = "successor_accepted_at")
+    private OffsetDateTime successorAcceptedAt;
+
+    @Column(name = "successor_notes", columnDefinition = "TEXT")
+    private String successorNotes;
+
+    @Column(name = "access_revoked")
+    private Boolean accessRevoked = false;
+
+    @Column(name = "access_revoked_at")
+    private OffsetDateTime accessRevokedAt;
+
     @Column(name = "is_deleted", nullable = false)
     private Boolean isDeleted = false;
 
@@ -124,4 +169,49 @@ public class KnowledgeTransferCase {
 
     public OffsetDateTime getCompletedAt() { return completedAt; }
     public void setCompletedAt(OffsetDateTime completedAt) { this.completedAt = completedAt; }
+
+    public String getEmployeeSnapshotName() { return employeeSnapshotName; }
+    public void setEmployeeSnapshotName(String employeeSnapshotName) { this.employeeSnapshotName = employeeSnapshotName; }
+
+    public String getEmployeeSnapshotTitle() { return employeeSnapshotTitle; }
+    public void setEmployeeSnapshotTitle(String employeeSnapshotTitle) { this.employeeSnapshotTitle = employeeSnapshotTitle; }
+
+    public String getEmployeeSnapshotDept() { return employeeSnapshotDept; }
+    public void setEmployeeSnapshotDept(String employeeSnapshotDept) { this.employeeSnapshotDept = employeeSnapshotDept; }
+
+    public String getEmployeeSnapshotNumber() { return employeeSnapshotNumber; }
+    public void setEmployeeSnapshotNumber(String employeeSnapshotNumber) { this.employeeSnapshotNumber = employeeSnapshotNumber; }
+
+    public String getManagerSnapshotName() { return managerSnapshotName; }
+    public void setManagerSnapshotName(String managerSnapshotName) { this.managerSnapshotName = managerSnapshotName; }
+
+    public LocalDate getExitDate() { return exitDate; }
+    public void setExitDate(LocalDate exitDate) { this.exitDate = exitDate; }
+
+    public Boolean getManagerApproved() { return managerApproved; }
+    public void setManagerApproved(Boolean managerApproved) { this.managerApproved = managerApproved; }
+
+    public OffsetDateTime getManagerApprovedAt() { return managerApprovedAt; }
+    public void setManagerApprovedAt(OffsetDateTime managerApprovedAt) { this.managerApprovedAt = managerApprovedAt; }
+
+    public Boolean getHrApproved() { return hrApproved; }
+    public void setHrApproved(Boolean hrApproved) { this.hrApproved = hrApproved; }
+
+    public OffsetDateTime getHrApprovedAt() { return hrApprovedAt; }
+    public void setHrApprovedAt(OffsetDateTime hrApprovedAt) { this.hrApprovedAt = hrApprovedAt; }
+
+    public Boolean getSuccessorAccepted() { return successorAccepted; }
+    public void setSuccessorAccepted(Boolean successorAccepted) { this.successorAccepted = successorAccepted; }
+
+    public OffsetDateTime getSuccessorAcceptedAt() { return successorAcceptedAt; }
+    public void setSuccessorAcceptedAt(OffsetDateTime successorAcceptedAt) { this.successorAcceptedAt = successorAcceptedAt; }
+
+    public String getSuccessorNotes() { return successorNotes; }
+    public void setSuccessorNotes(String successorNotes) { this.successorNotes = successorNotes; }
+
+    public Boolean getAccessRevoked() { return accessRevoked; }
+    public void setAccessRevoked(Boolean accessRevoked) { this.accessRevoked = accessRevoked; }
+
+    public OffsetDateTime getAccessRevokedAt() { return accessRevokedAt; }
+    public void setAccessRevokedAt(OffsetDateTime accessRevokedAt) { this.accessRevokedAt = accessRevokedAt; }
 }
