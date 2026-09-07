@@ -14,7 +14,7 @@ services:
     volumes:
       - kms-postgres-prod-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-kmsuser} -d ${DATABASE_NAME:-kmsdb}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-kmsuser} -d ${DATABASE_NAME:-kmsdb}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,7 +55,7 @@ services:
       kms-keycloak:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8081/api/v1/health/liveness || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8081/api/v1/health/liveness || exit 1" ]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -78,7 +78,7 @@ services:
       kms-keycloak:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8081/api/v1/health/liveness || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8081/api/v1/health/liveness || exit 1" ]
       interval: 10s
       timeout: 3s
       retries: 3
