@@ -52,12 +52,14 @@ interface NavItem {
   icon: React.ElementType;
   role: UserRole;
   badge?: string;
+  children?: NavItem[];
 }
 
 interface NavSection {
   id: string;
   title: string;
   icon?: React.ElementType;
+  hideHeader?: boolean;
   items: NavItem[];
 }
 
@@ -76,6 +78,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
       ...prev,
       [sectionId]: !prev[sectionId],
     }));
+  };
+
+  // Submenu expansion state (e.g. for governance sub-options)
+  const [expandedSubmenus, setExpandedSubmenus] = useState<Record<string, boolean>>({});
+
+  const toggleSubmenu = (href: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setExpandedSubmenus((prev) => {
+      const currentlyOpen = prev[href] ?? pathname.startsWith(href);
+      return {
+        ...prev,
+        [href]: !currentlyOpen,
+      };
+    });
   };
 
   // Structured Navigation Groups (Compressed & Streamlined)
@@ -109,11 +126,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
     {
       id: 'governance',
       title: 'Compliance & Governance',
+      hideHeader: true,
       items: [
-        { href: '/governance/audit-logs', label: 'Audit Logs', icon: FileText, role: 'ROLE_COMPLIANCE_OFFICER' },
-        { href: '/governance/retention', label: 'Retention Policies', icon: FileLock2, role: 'ROLE_COMPLIANCE_OFFICER' },
-        { href: '/governance/legal-holds', label: 'Legal Holds', icon: ShieldCheck, role: 'ROLE_COMPLIANCE_OFFICER' },
-        { href: '/governance/reports', label: 'Compliance Reports', icon: BarChart2, role: 'ROLE_COMPLIANCE_OFFICER' },
+        {
+          href: '/governance',
+          label: 'Compliance & Governance',
+          icon: ShieldCheck,
+          role: 'ROLE_COMPLIANCE_OFFICER',
+          children: [
+            { href: '/governance/audit-logs', label: 'Audit Logs', icon: FileText, role: 'ROLE_COMPLIANCE_OFFICER' },
+            { href: '/governance/retention', label: 'Retention Policies', icon: FileLock2, role: 'ROLE_COMPLIANCE_OFFICER' },
+            { href: '/governance/legal-holds', label: 'Legal Holds', icon: ShieldAlert, role: 'ROLE_COMPLIANCE_OFFICER' },
+            { href: '/governance/reports', label: 'Compliance Reports', icon: BarChart2, role: 'ROLE_COMPLIANCE_OFFICER' },
+          ],
+        },
       ],
     },
     {
@@ -127,7 +153,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
 
   // Quick jump search targets across all modules including admin sub-tools
   const quickJumpItems: NavItem[] = useMemo(() => [
-    ...navSections.flatMap((s) => s.items),
+    ...navSections.flatMap((s) => s.items.flatMap((item) => [item, ...(item.children || [])])),
     { href: '/search/saved', label: 'Saved Searches & Alerts', icon: BookmarkCheck, role: 'ROLE_VIEWER' },
     { href: '/articles/create', label: 'Create Knowledge Article', icon: FileText, role: 'ROLE_CONTRIBUTOR' },
     { href: '/hr/employees', label: 'HR & Employees', icon: Users, role: 'ROLE_ADMIN' },
@@ -240,10 +266,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
       ].filter((sec) => sec.items.length > 0);
     }
 
-    // Default: Return the 6 core items filtered by role
+    // Default: Return the core items filtered by role
     return navSections
       .map((sec) => {
-        const allowedItems = sec.items.filter((item) => hasRole(userRoles, item.role));
+        const allowedItems = sec.items
+          .filter((item) => hasRole(userRoles, item.role))
+          .map((item) => {
+            if (!item.children) return item;
+            return {
+              ...item,
+              children: item.children.filter((child) => hasRole(userRoles, child.role)),
+            };
+          });
         return {
           ...sec,
           items: allowedItems,
@@ -285,38 +319,44 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
         )}
 
         {filteredSections.map((section) => {
-          const isCollapsed = !filterQuery && Boolean(collapsedSections[section.id]);
+          const isCollapsed = !filterQuery && !section.hideHeader && Boolean(collapsedSections[section.id]);
 
           return (
             <div key={section.id} className="space-y-1">
-              {/* Section Header with Collapse Trigger */}
-              <button
-                type="button"
-                onClick={() => toggleSection(section.id)}
-                className="w-full flex items-center justify-between px-2.5 py-1 text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider group transition-colors select-none"
-              >
-                <span>{section.title}</span>
-                <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-600 group-hover:bg-slate-100 transition-all">
-                  {isCollapsed ? (
-                    <ChevronRight className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                </span>
-              </button>
+              {/* Section Header with Collapse Trigger (omitted if hideHeader is true to avoid double expand) */}
+              {!section.hideHeader && (
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.id)}
+                  className="w-full flex items-center justify-between px-2.5 py-1 text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider group transition-colors select-none"
+                >
+                  <span>{section.title}</span>
+                  <span className="p-0.5 rounded text-slate-400 group-hover:text-slate-600 group-hover:bg-slate-100 transition-all">
+                    {isCollapsed ? (
+                      <ChevronRight className="w-3 h-3" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3" />
+                    )}
+                  </span>
+                </button>
+              )}
 
               {/* Section Items */}
-              {!isCollapsed && (
+              {(!isCollapsed || section.hideHeader) && (
                 <nav className="space-y-0.5 pt-0.5" aria-label={section.title}>
                   {section.items.map((item) => {
                     const Icon = item.icon;
+                    const hasChildren = Boolean(item.children && item.children.length > 0);
+                    const isCurrentRouteInSubtree = Boolean(
+                      pathname === item.href ||
+                      (item.children && item.children.some((c) => pathname === c.href || pathname.startsWith(c.href + '/')))
+                    );
+                    const isSubmenuOpen = expandedSubmenus[item.href] ?? isCurrentRouteInSubtree;
+
                     const isActive =
                       pathname === item.href ||
                       (item.href === '/admin' && (pathname.startsWith('/admin') || pathname.startsWith('/hr'))) ||
-                      (item.href === '/governance/audit-logs' && pathname === '/governance/audit-logs') ||
-                      (item.href === '/governance/retention' && pathname.startsWith('/governance/retention')) ||
-                      (item.href === '/governance/legal-holds' && pathname.startsWith('/governance/legal-holds')) ||
-                      (item.href === '/governance/reports' && pathname.startsWith('/governance/reports')) ||
+                      (item.href === '/governance' && pathname.startsWith('/governance')) ||
                       (item.href === '/folders' && pathname.startsWith('/folders')) ||
                       (item.href === '/search' && pathname.startsWith('/search')) ||
                       (item.href === '/library' && pathname === '/library') ||
@@ -324,45 +364,106 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
                       (item.href === '/discussions' && pathname.startsWith('/discussions')) ||
                       (item.href === '/blogs' && (pathname.startsWith('/blogs') || pathname.startsWith('/articles'))) ||
                       (item.href === '/approvals' && pathname.startsWith('/approvals')) ||
-                      (item.href !== '/' && item.href !== '/admin' && pathname.startsWith(item.href));
+                      (item.href !== '/' && item.href !== '/admin' && item.href !== '/governance' && pathname.startsWith(item.href));
 
                     return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={isMobile ? onCloseMobile : undefined}
-                        className={`group relative w-full flex items-center gap-2.5 px-2.5 py-1.5 text-xs rounded-lg transition-all duration-150 select-none ${
-                          isActive
-                            ? 'bg-gradient-to-r from-blue-50/90 to-indigo-50/50 text-blue-700 font-bold border border-blue-200/70 shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-950 hover:bg-slate-100/70 font-medium'
-                        }`}
-                      >
-                        {/* Active Indicator Bar */}
-                        {isActive && (
-                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-gradient-to-b from-blue-600 to-indigo-600 rounded-r-full" />
-                        )}
+                      <div key={item.href} className="space-y-0.5">
+                        <div className="flex items-center gap-1">
+                          <Link
+                            href={item.href}
+                            onClick={() => {
+                              if (hasChildren) {
+                                setExpandedSubmenus((prev) => ({ ...prev, [item.href]: true }));
+                              }
+                              if (isMobile && onCloseMobile) {
+                                onCloseMobile();
+                              }
+                            }}
+                            className={`group relative flex-1 flex items-center gap-2.5 px-2.5 py-1.5 text-xs rounded-lg transition-all duration-150 select-none ${
+                              isActive
+                                ? 'bg-gradient-to-r from-blue-50/90 to-indigo-50/50 text-blue-700 font-bold border border-blue-200/70 shadow-2xs'
+                                : 'text-slate-600 hover:text-slate-950 hover:bg-slate-100/70 font-medium'
+                            }`}
+                          >
+                            {/* Active Indicator Bar */}
+                            {isActive && (
+                              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-gradient-to-b from-blue-600 to-indigo-600 rounded-r-full" />
+                            )}
 
-                        {/* Icon Container with Subtle Glow */}
-                        <div
-                          className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all duration-150 ${
-                            isActive
-                              ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/30'
-                              : 'text-slate-400 group-hover:text-slate-700 group-hover:bg-slate-200/60'
-                          }`}
-                        >
-                          <Icon className="w-3.5 h-3.5" />
+                            {/* Icon Container with Subtle Glow */}
+                            <div
+                              className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-all duration-150 ${
+                                isActive
+                                  ? 'bg-blue-600 text-white shadow-xs shadow-blue-500/30'
+                                  : 'text-slate-400 group-hover:text-slate-700 group-hover:bg-slate-200/60'
+                              }`}
+                            >
+                              <Icon className="w-3.5 h-3.5" />
+                            </div>
+
+                            {/* Label */}
+                            <span className="truncate flex-1 tracking-tight">{item.label}</span>
+
+                            {/* Notifications Pill Badge */}
+                            {item.href === '/notifications' && unreadCount > 0 && (
+                              <span className="shrink-0 flex items-center justify-center bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] shadow-xs shadow-rose-500/30 animate-pulse">
+                                {unreadCount > 99 ? '99+' : unreadCount}
+                              </span>
+                            )}
+                          </Link>
+
+                          {/* Submenu toggle chevron if item has children */}
+                          {hasChildren && (
+                            <button
+                              type="button"
+                              onClick={(e) => toggleSubmenu(item.href, e)}
+                              className={`p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all shrink-0 ${
+                                isSubmenuOpen ? 'text-blue-600' : ''
+                              }`}
+                              title={isSubmenuOpen ? 'Collapse options' : 'Expand options'}
+                            >
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                  isSubmenuOpen ? 'rotate-180 text-blue-600' : ''
+                                }`}
+                              />
+                            </button>
+                          )}
                         </div>
 
-                        {/* Label */}
-                        <span className="truncate flex-1 tracking-tight">{item.label}</span>
+                        {/* Submenu Children Options */}
+                        {hasChildren && isSubmenuOpen && item.children && item.children.length > 0 && (
+                          <div className="ml-5 pl-2.5 py-0.5 space-y-0.5 border-l border-slate-200">
+                            {item.children.map((child) => {
+                              const ChildIcon = child.icon;
+                              const isChildActive = pathname === child.href || pathname.startsWith(child.href + '/');
 
-                        {/* Notifications Pill Badge */}
-                        {item.href === '/notifications' && unreadCount > 0 && (
-                          <span className="shrink-0 flex items-center justify-center bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-[18px] shadow-xs shadow-rose-500/30 animate-pulse">
-                            {unreadCount > 99 ? '99+' : unreadCount}
-                          </span>
+                              return (
+                                <Link
+                                  key={child.href}
+                                  href={child.href}
+                                  onClick={isMobile ? onCloseMobile : undefined}
+                                  className={`group relative flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg transition-all duration-150 select-none ${
+                                    isChildActive
+                                      ? 'bg-blue-50 text-blue-700 font-bold border border-blue-200/60 shadow-2xs'
+                                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/60 font-medium'
+                                  }`}
+                                >
+                                  {isChildActive && (
+                                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-3.5 bg-blue-600 rounded-r-full" />
+                                  )}
+                                  <ChildIcon
+                                    className={`w-3.5 h-3.5 shrink-0 ${
+                                      isChildActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'
+                                    }`}
+                                  />
+                                  <span className="truncate flex-1 text-[11.5px]">{child.label}</span>
+                                </Link>
+                              );
+                            })}
+                          </div>
                         )}
-                      </Link>
+                      </div>
                     );
                   })}
                 </nav>

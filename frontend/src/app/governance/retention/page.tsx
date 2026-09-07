@@ -11,6 +11,7 @@ import { Modal } from '@/src/components/ui/Modal';
 import { Input, Select } from '@/src/components/ui/Input';
 import { LoadingState } from '@/src/components/ui/States';
 import { kmsApi } from '@/src/lib/api';
+import { GovernanceNavTabs } from '@/src/components/governance/GovernanceNavTabs';
 import { FileLock2, Plus, Archive, Trash2, Pencil, PlayCircle, Eye, ShieldAlert, CheckCircle } from 'lucide-react';
 
 interface PolicyRow {
@@ -272,9 +273,9 @@ export default function RetentionPoliciesPage() {
   return (
     <AppShell requiredRole="ROLE_COMPLIANCE_OFFICER">
       <div className="space-y-6">
-        <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-kms-slate-200 pb-3 gap-3">
           <div>
-            <Breadcrumb items={[{ label: 'Governance & Compliance' }, { label: 'Retention Policies' }]} />
+            <Breadcrumb items={[{ label: 'Compliance & Governance', href: '/governance' }, { label: 'Retention Policies' }]} />
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
               <FileLock2 className="w-5 h-5 text-blue-700" />
               Retention Policies &amp; Automated Disposition Rules
@@ -290,6 +291,9 @@ export default function RetentionPoliciesPage() {
             </Button>
           </div>
         </div>
+
+        {/* Top Sub-Navigation Tabs */}
+        <GovernanceNavTabs />
 
         <Alert type="info">
           Retention schedules automatically archive, flag for review or purge documents when their retention duration

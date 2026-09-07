@@ -10,6 +10,7 @@ import { Pagination } from '@/src/components/ui/Pagination';
 import { LoadingState } from '@/src/components/ui/States';
 import { Input, Select } from '@/src/components/ui/Input';
 import { Alert } from '@/src/components/ui/Alert';
+import { GovernanceNavTabs } from '@/src/components/governance/GovernanceNavTabs';
 import { ShieldCheck, Download, RefreshCw } from 'lucide-react';
 
 interface AuditLogEntry {
@@ -146,10 +147,10 @@ export default function SecurityAuditLogsPage() {
       <div className="space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-kms-slate-200 pb-3 gap-3">
           <div>
-            <Breadcrumb items={[{ label: 'Governance & Compliance' }, { label: 'Security Audit Logs' }]} />
+            <Breadcrumb items={[{ label: 'Compliance & Governance', href: '/governance' }, { label: 'Security Audit Logs' }]} />
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-blue-700" />
-              Immutable Security Audit Logs & Access Trail
+              Immutable Security Audit Logs &amp; Access Trail
             </h1>
             <p className="text-[11px] text-kms-slate-500 mt-1">
               FR-22 immutable audit trail — {totalElements.toLocaleString()} recorded events
@@ -165,6 +166,9 @@ export default function SecurityAuditLogsPage() {
             </Button>
           </div>
         </div>
+
+        {/* Top Sub-Navigation Tabs */}
+        <GovernanceNavTabs />
 
         {error && <Alert type="error">{error}</Alert>}
 

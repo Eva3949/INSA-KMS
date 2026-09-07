@@ -9,6 +9,7 @@ import { Table } from '@/src/components/ui/Table';
 import { Alert } from '@/src/components/ui/Alert';
 import { LoadingState } from '@/src/components/ui/States';
 import { kmsApi } from '@/src/lib/api';
+import { GovernanceNavTabs } from '@/src/components/governance/GovernanceNavTabs';
 import { BarChart2, ShieldAlert, FileClock, HardDrive, RefreshCw, AlertTriangle } from 'lucide-react';
 
 interface StaleItem {
@@ -94,7 +95,7 @@ export default function ComplianceReportsPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
           <div>
-            <Breadcrumb items={[{ label: 'Governance & Compliance' }, { label: 'Compliance Reports' }]} />
+            <Breadcrumb items={[{ label: 'Compliance & Governance', href: '/governance' }, { label: 'Compliance Reports' }]} />
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
               <BarChart2 className="w-5 h-5 text-blue-700" />
               Compliance &amp; Retention Oversight Reports
@@ -107,6 +108,9 @@ export default function ComplianceReportsPage() {
             Refresh Reports
           </Button>
         </div>
+
+        {/* Top Sub-Navigation Tabs */}
+        <GovernanceNavTabs />
 
         {error && <Alert type="error">{error}</Alert>}
 

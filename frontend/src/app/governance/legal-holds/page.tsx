@@ -11,6 +11,7 @@ import { Modal } from '@/src/components/ui/Modal';
 import { Input } from '@/src/components/ui/Input';
 import { LoadingState } from '@/src/components/ui/States';
 import { kmsApi } from '@/src/lib/api';
+import { GovernanceNavTabs } from '@/src/components/governance/GovernanceNavTabs';
 import { ShieldAlert, Plus, Unlock, FolderOpen, Trash2, Search, FileText } from 'lucide-react';
 
 interface HoldRow {
@@ -248,7 +249,7 @@ export default function LegalHoldsPage() {
       <div className="space-y-5">
         <div className="flex items-center justify-between border-b border-kms-slate-200 pb-3">
           <div>
-            <Breadcrumb items={[{ label: 'Governance & Compliance' }, { label: 'Legal Holds' }]} />
+            <Breadcrumb items={[{ label: 'Compliance & Governance', href: '/governance' }, { label: 'Legal Holds' }]} />
             <h1 className="text-xl font-bold text-kms-slate-900 tracking-tight flex items-center gap-2">
               <ShieldAlert className="w-5 h-5 text-amber-600" />
               Litigation Legal Holds Case Manager
@@ -259,6 +260,9 @@ export default function LegalHoldsPage() {
             Issue Legal Hold Case
           </Button>
         </div>
+
+        {/* Top Sub-Navigation Tabs */}
+        <GovernanceNavTabs />
 
         <Alert type="legal-hold" title="OVERRIDING LEGAL COMPLIANCE ENFORCEMENT">
           Documents added to an active Legal Hold case are completely frozen against modification, soft deletion, and
