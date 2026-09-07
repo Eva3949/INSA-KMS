@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, Volume2, VolumeX, Download } from 'lucide-react';
-import { getAuthenticatedMediaUrl } from '@/src/lib/api';
+import { Play, Pause, Volume2, VolumeX, Download, AlertCircle } from 'lucide-react';
 
 interface VoicePlayerProps {
   src: string;
@@ -24,6 +23,7 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
   const [totalDuration, setTotalDuration] = useState(durationSeconds);
   const [isMuted, setIsMuted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUnavailable, setIsUnavailable] = useState(false);
 
   useEffect(() => {
     if (durationSeconds && durationSeconds > 0) {
@@ -38,7 +38,6 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
       return;
     }
     const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
-    const fallbackUrl = getAuthenticatedMediaUrl(src);
     const controller = new AbortController();
 
     fetch(src, {
@@ -55,13 +54,8 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
       })
       .catch((err: any) => {
         if (!controller.signal.aborted) {
-          const statusMatch = err?.message?.match(/HTTP (\d+)/);
-          const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
-          if (status === 404 || status >= 500) {
-            setIsLoading(false);
-          } else if (fallbackUrl && fallbackUrl !== src) {
-            setAudioBlobUrl(fallbackUrl);
-          }
+          setIsUnavailable(true);
+          setIsLoading(false);
         }
       });
 
@@ -140,6 +134,18 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
   };
 
   const progressPercent = totalDuration > 0 ? Math.min((currentTime / totalDuration) * 100, 100) : 0;
+
+  if (isUnavailable) {
+    return (
+      <div className={`my-1.5 p-2.5 rounded-2xl flex items-center gap-2.5 bg-rose-50 border border-rose-200 text-rose-700 shadow-xs min-w-[240px] max-w-[340px]`}>
+        <AlertCircle className="w-5 h-5 shrink-0 text-rose-500" />
+        <div className="flex flex-col min-w-0">
+          <span className="text-xs font-semibold text-rose-800">Audio unavailable</span>
+          <span className="text-[11px] text-rose-600 truncate">{filename}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

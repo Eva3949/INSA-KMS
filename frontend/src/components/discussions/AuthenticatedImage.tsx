@@ -42,7 +42,6 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     setHasError(false);
 
     const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
-    const fallbackUrl = getAuthenticatedMediaUrl(src);
 
     fetch(src, {
       signal: abortController.signal,
@@ -65,18 +64,8 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       })
       .catch((err: any) => {
         if (abortController.signal.aborted) return;
-        const statusMatch = err?.message?.match(/HTTP (\d+)/);
-        const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
-        if (status === 404 || status >= 500) {
-          setHasError(true);
-          setIsLoading(false);
-        } else if (fallbackUrl && fallbackUrl !== src) {
-          setBlobSrc(fallbackUrl);
-          setIsLoading(false);
-        } else {
-          setHasError(true);
-          setIsLoading(false);
-        }
+        setHasError(true);
+        setIsLoading(false);
       });
 
     return () => {

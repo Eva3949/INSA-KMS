@@ -11,7 +11,6 @@ import com.enterprise.kms.repository.DiscussionTopicRepository;
 import com.enterprise.kms.repository.StorageObjectRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
@@ -25,7 +24,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -208,98 +206,65 @@ public class DiscussionMediaService {
 
         try {
             Path physicalPath = resolvePhysicalPath(att);
-            if (physicalPath != null && Files.exists(physicalPath) && Files.isReadable(physicalPath)) {
-                InputStream fis = Files.newInputStream(physicalPath);
-                Resource resource = new InputStreamResource(fis);
-
-                // Audit media access
-                try {
-                    String details = String.format("{\"filename\":\"%s\",\"mediaType\":\"%s\"}",
-                            sanitizeFilenameForJson(att.getOriginalFilename()), att.getMediaType());
-                    auditService.recordAuditLog(username, null, "DISCUSSION_MEDIA_ACCESSED", "DISCUSSION_ATTACHMENT", att.getId().toString(), null, details);
-                } catch (Exception ignored) {}
-
-                long size = Files.size(physicalPath);
-                String mime = (att.getMimeType() != null && !att.getMimeType().isBlank()) ? att.getMimeType() : "application/octet-stream";
-
-                return ResponseEntity.ok()
-                        .contentLength(size > 0 ? size : att.getFileSizeBytes())
-                        .contentType(MediaType.parseMediaType(mime))
-                        .header("Content-Disposition", "inline; filename=\"" + att.getOriginalFilename() + "\"")
-                        .body(resource);
+            if (physicalPath == null || !Files.exists(physicalPath) || !Files.isReadable(physicalPath)) {
+                log.warn("Discussion media binary not found on storage: discussionId={}, mediaId={}, objectKey={}",
+                        discussionId, mediaId, att.getObjectKey());
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion media binary not found on storage");
             }
 
-            // Fallback: If binary missing on disk, return a graceful fallback representation rather than 500 error
-            if ("IMAGE".equalsIgnoreCase(att.getMediaType())) {
-                byte[] placeholderSvg = generatePlaceholderSvg(att.getOriginalFilename());
-                return ResponseEntity.ok()
-                        .contentType(MediaType.valueOf("image/svg+xml"))
-                        .contentLength(placeholderSvg.length)
-                        .header("Content-Disposition", "inline; filename=\"placeholder.svg\"")
-                        .body(new ByteArrayResource(placeholderSvg));
-            } else if ("AUDIO".equalsIgnoreCase(att.getMediaType())) {
-                byte[] silentAudio = generateSilentAudio();
-                String audioMime = (att.getMimeType() != null && !att.getMimeType().isBlank()) ? att.getMimeType() : "audio/wav";
-                return ResponseEntity.ok()
-                        .contentType(MediaType.parseMediaType(audioMime))
-                        .contentLength(silentAudio.length)
-                        .header("Content-Disposition", "inline; filename=\"" + att.getOriginalFilename() + "\"")
-                        .body(new ByteArrayResource(silentAudio));
-            }
+            InputStream fis = Files.newInputStream(physicalPath);
+            Resource resource = new InputStreamResource(fis);
 
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion media binary not found on storage");
+            // Audit media access
+            try {
+                String details = String.format("{\"filename\":\"%s\",\"mediaType\":\"%s\"}",
+                        sanitizeFilenameForJson(att.getOriginalFilename()), att.getMediaType());
+                auditService.recordAuditLog(username, null, "DISCUSSION_MEDIA_ACCESSED", "DISCUSSION_ATTACHMENT", att.getId().toString(), null, details);
+            } catch (Exception ignored) {}
+
+            long size = Files.size(physicalPath);
+            String mime = (att.getMimeType() != null && !att.getMimeType().isBlank()) ? att.getMimeType() : "application/octet-stream";
+
+            return ResponseEntity.ok()
+                    .contentLength(size > 0 ? size : att.getFileSizeBytes())
+                    .contentType(MediaType.parseMediaType(mime))
+                    .header("Content-Disposition", "inline; filename=\"" + att.getOriginalFilename() + "\"")
+                    .body(resource);
         } catch (ResponseStatusException rse) {
             throw rse;
         } catch (Exception e) {
             log.error("Failed to stream discussion media {}: {}", mediaId, e.getMessage());
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Media content binary not found");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to stream media binary");
         }
     }
 
     private Path resolvePhysicalPath(DiscussionAttachment att) {
         if (att.getObjectKey() != null && !att.getObjectKey().isBlank()) {
-            Path p = storageService.getStorageLocation().resolve(att.getObjectKey()).normalize();
-            if (Files.exists(p) && Files.isReadable(p)) {
-                return p;
-            }
+            try {
+                Path p = storageService.resolve(att.getObjectKey());
+                if (p != null && Files.exists(p) && Files.isReadable(p)) {
+                    return p;
+                }
+            } catch (Exception ignored) {}
         }
         if (att.getStorageObject() != null && att.getStorageObject().getStoragePath() != null) {
-            Path p = storageService.getStorageLocation().resolve(att.getStorageObject().getStoragePath()).normalize();
-            if (Files.exists(p) && Files.isReadable(p)) {
-                return p;
-            }
+            try {
+                Path p = storageService.resolve(att.getStorageObject().getStoragePath());
+                if (p != null && Files.exists(p) && Files.isReadable(p)) {
+                    return p;
+                }
+            } catch (Exception ignored) {}
         }
         if (att.getObjectKey() != null) {
-            String filename = Paths.get(att.getObjectKey()).getFileName().toString();
-            Path inStorage = storageService.getStorageLocation().resolve(filename).normalize();
-            if (Files.exists(inStorage) && Files.isReadable(inStorage)) {
-                return inStorage;
-            }
+            try {
+                String filename = Paths.get(att.getObjectKey()).getFileName().toString();
+                Path inStorage = storageService.getStorageLocation().resolve(filename).normalize();
+                if (Files.exists(inStorage) && Files.isReadable(inStorage)) {
+                    return inStorage;
+                }
+            } catch (Exception ignored) {}
         }
         return null;
-    }
-
-    private byte[] generatePlaceholderSvg(String filename) {
-        String safeName = (filename != null && !filename.isBlank()) ? filename.replaceAll("[<>&\"']", "") : "Attachment";
-        String svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"260\" viewBox=\"0 0 400 260\" fill=\"none\">"
-                + "<rect width=\"400\" height=\"260\" rx=\"12\" fill=\"#F8FAFC\"/>"
-                + "<rect x=\"1\" y=\"1\" width=\"398\" height=\"258\" rx=\"11\" stroke=\"#CBD5E1\" stroke-width=\"2\" stroke-dasharray=\"6 6\"/>"
-                + "<circle cx=\"200\" cy=\"100\" r=\"30\" fill=\"#E2E8F0\"/>"
-                + "<path d=\"M188 106L196 96L204 104L208 100L216 108\" stroke=\"#64748B\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
-                + "<circle cx=\"194\" cy=\"92\" r=\"2.5\" fill=\"#64748B\"/>"
-                + "<text x=\"200\" y=\"155\" font-family=\"system-ui, -apple-system, sans-serif\" font-size=\"14\" font-weight=\"600\" fill=\"#475569\" text-anchor=\"middle\">Image Not Found on Storage</text>"
-                + "<text x=\"200\" y=\"178\" font-family=\"system-ui, -apple-system, sans-serif\" font-size=\"12\" fill=\"#94A3B8\" text-anchor=\"middle\">" + safeName + "</text>"
-                + "</svg>";
-        return svg.getBytes(StandardCharsets.UTF_8);
-    }
-
-    private byte[] generateSilentAudio() {
-        return new byte[] {
-            'R', 'I', 'F', 'F', 36, 0, 0, 0, 'W', 'A', 'V', 'E',
-            'f', 'm', 't', ' ', 16, 0, 0, 0, 1, 0, 1, 0,
-            (byte) 0x44, (byte) 0xAC, 0, 0, (byte) 0x88, 0x58, 1, 0, 2, 0, 16, 0,
-            'd', 'a', 't', 'a', 0, 0, 0, 0
-        };
     }
 
     @Transactional
