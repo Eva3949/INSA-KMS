@@ -22,7 +22,8 @@ import {
   ShieldAlert,
   GitPullRequestArrow,
   Search,
-  UserCheck
+  UserCheck,
+  MessageSquare
 } from 'lucide-react';
 import Link from 'next/link';
 import { kmsApi } from '@/src/lib/api';
@@ -177,7 +178,7 @@ export default function AdminDashboardPage() {
               </p>
             </div>
             <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md self-start sm:self-auto">
-              14 Management Sub-modules
+              15 Management Sub-modules
             </span>
           </div>
 
@@ -317,6 +318,20 @@ export default function AdminDashboardPage() {
                     <div className="min-w-0">
                       <div className="text-xs font-semibold text-slate-800 group-hover:text-indigo-700">Department Quotas</div>
                       <div className="text-[10px] text-slate-500 truncate">Storage size thresholds and departmental consumption monitoring</div>
+                    </div>
+                  </div>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 shrink-0" />
+                </Link>
+
+                <Link
+                  href="/discussions"
+                  className="p-2.5 bg-slate-50/70 hover:bg-indigo-50/80 border border-slate-200/80 hover:border-indigo-300 rounded-lg flex items-center justify-between group transition-all"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <MessageSquare className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-800 group-hover:text-indigo-700">Discussions &amp; Forum Moderation</div>
+                      <div className="text-[10px] text-slate-500 truncate">Manage forum topics, close/reopen threads and moderate video discussions</div>
                     </div>
                   </div>
                   <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 shrink-0" />

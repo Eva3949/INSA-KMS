@@ -78,25 +78,58 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
     }));
   };
 
-  // The 6 Core Primary Navigation Items
-  const coreNavItems: NavItem[] = useMemo(() => [
-    { href: '/', label: 'Dashboard', icon: LayoutDashboard, role: 'ROLE_VIEWER' },
-    { href: '/library', label: 'Document Library', icon: Folder, role: 'ROLE_VIEWER' },
-    { href: '/blogs', label: 'Knowledge & Community', icon: FileText, role: 'ROLE_VIEWER' },
-    { href: '/approvals', label: 'Approvals & Workflows', icon: GitPullRequestArrow, role: 'ROLE_CONTENT_OWNER' },
-    { href: '/governance/audit-logs', label: 'Governance & Compliance', icon: ShieldCheck, role: 'ROLE_COMPLIANCE_OFFICER' },
-    { href: '/admin', label: 'System Administration', icon: Settings, role: 'ROLE_ADMIN' },
+  // Structured Navigation Groups (Compressed & Streamlined)
+  const navSections: NavSection[] = useMemo(() => [
+    {
+      id: 'workspace',
+      title: 'Workspace & Documents',
+      items: [
+        { href: '/', label: 'Dashboard', icon: LayoutDashboard, role: 'ROLE_VIEWER' },
+        { href: '/library', label: 'Document Library', icon: Folder, role: 'ROLE_VIEWER' },
+        { href: '/folders', label: 'Folders & Structure', icon: Folder, role: 'ROLE_CONTRIBUTOR' },
+        { href: '/search', label: 'Advanced Search', icon: Search, role: 'ROLE_VIEWER' },
+      ],
+    },
+    {
+      id: 'knowledge',
+      title: 'Knowledge & Community',
+      items: [
+        { href: '/blogs', label: 'Blogs & Articles', icon: FileText, role: 'ROLE_VIEWER' },
+        { href: '/discussions', label: 'Discussions & Forum', icon: Users, role: 'ROLE_VIEWER' },
+        { href: '/knowledge-transfer', label: 'Knowledge Transfer', icon: Layers, role: 'ROLE_VIEWER' },
+      ],
+    },
+    {
+      id: 'workflow',
+      title: 'Activity & Approvals',
+      items: [
+        { href: '/approvals', label: 'Approval Inbox', icon: GitPullRequestArrow, role: 'ROLE_CONTENT_OWNER' },
+      ],
+    },
+    {
+      id: 'governance',
+      title: 'Compliance & Governance',
+      items: [
+        { href: '/governance/audit-logs', label: 'Audit Logs', icon: FileText, role: 'ROLE_COMPLIANCE_OFFICER' },
+        { href: '/governance/retention', label: 'Retention Policies', icon: FileLock2, role: 'ROLE_COMPLIANCE_OFFICER' },
+        { href: '/governance/legal-holds', label: 'Legal Holds', icon: ShieldCheck, role: 'ROLE_COMPLIANCE_OFFICER' },
+        { href: '/governance/reports', label: 'Compliance Reports', icon: BarChart2, role: 'ROLE_COMPLIANCE_OFFICER' },
+      ],
+    },
+    {
+      id: 'admin',
+      title: 'System Administration',
+      items: [
+        { href: '/admin', label: 'System Admin Console', icon: Settings, role: 'ROLE_ADMIN' },
+      ],
+    },
   ], []);
 
-  // Quick jump search targets across all modules
+  // Quick jump search targets across all modules including admin sub-tools
   const quickJumpItems: NavItem[] = useMemo(() => [
-    ...coreNavItems,
-    { href: '/folders', label: 'Folders & Structure', icon: Folder, role: 'ROLE_CONTRIBUTOR' },
-    { href: '/search', label: 'Advanced Search', icon: Search, role: 'ROLE_VIEWER' },
-    { href: '/discussions', label: 'Discussions & Forum', icon: Users, role: 'ROLE_VIEWER' },
-    { href: '/knowledge-transfer', label: 'Knowledge Transfer', icon: GitPullRequestArrow, role: 'ROLE_VIEWER' },
-    { href: '/governance/retention', label: 'Retention Policies', icon: FileLock2, role: 'ROLE_COMPLIANCE_OFFICER' },
-    { href: '/governance/legal-holds', label: 'Legal Holds', icon: ShieldCheck, role: 'ROLE_COMPLIANCE_OFFICER' },
+    ...navSections.flatMap((s) => s.items),
+    { href: '/search/saved', label: 'Saved Searches & Alerts', icon: BookmarkCheck, role: 'ROLE_VIEWER' },
+    { href: '/articles/create', label: 'Create Knowledge Article', icon: FileText, role: 'ROLE_CONTRIBUTOR' },
     { href: '/hr/employees', label: 'HR & Employees', icon: Users, role: 'ROLE_ADMIN' },
     { href: '/admin/users', label: 'Users Directory', icon: Users, role: 'ROLE_ADMIN' },
     { href: '/admin/groups', label: 'Groups & Teams', icon: UsersRound, role: 'ROLE_ADMIN' },
@@ -111,15 +144,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
     { href: '/admin/security', label: 'Security & Integrity Alerts', icon: ShieldAlert, role: 'ROLE_SUPER_ADMIN' },
     { href: '/admin/approvals', label: 'Approval Workflows', icon: GitPullRequestArrow, role: 'ROLE_ADMIN' },
     { href: '/admin/settings', label: 'System Settings', icon: Settings, role: 'ROLE_SUPER_ADMIN' },
-  ], [coreNavItems]);
-
-  const navSections: NavSection[] = useMemo(() => [
-    {
-      id: 'core-navigation',
-      title: 'Workspace Navigation',
-      items: coreNavItems,
-    },
-  ], [coreNavItems]);
+  ], [navSections]);
 
   const isAdmin = hasRole(userRoles, 'ROLE_ADMIN');
   const [storageUsed, setStorageUsed] = useState<number | null>(null);
@@ -288,9 +313,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
                     const isActive =
                       pathname === item.href ||
                       (item.href === '/admin' && (pathname.startsWith('/admin') || pathname.startsWith('/hr'))) ||
-                      (item.href === '/governance/audit-logs' && pathname.startsWith('/governance')) ||
-                      (item.href === '/library' && (pathname.startsWith('/library') || pathname.startsWith('/folders') || pathname.startsWith('/search'))) ||
-                      (item.href === '/blogs' && (pathname.startsWith('/blogs') || pathname.startsWith('/discussions') || pathname.startsWith('/articles') || pathname.startsWith('/knowledge-transfer'))) ||
+                      (item.href === '/governance/audit-logs' && pathname === '/governance/audit-logs') ||
+                      (item.href === '/governance/retention' && pathname.startsWith('/governance/retention')) ||
+                      (item.href === '/governance/legal-holds' && pathname.startsWith('/governance/legal-holds')) ||
+                      (item.href === '/governance/reports' && pathname.startsWith('/governance/reports')) ||
+                      (item.href === '/folders' && pathname.startsWith('/folders')) ||
+                      (item.href === '/search' && pathname.startsWith('/search')) ||
+                      (item.href === '/library' && pathname === '/library') ||
+                      (item.href === '/knowledge-transfer' && pathname.startsWith('/knowledge-transfer')) ||
+                      (item.href === '/discussions' && pathname.startsWith('/discussions')) ||
+                      (item.href === '/blogs' && (pathname.startsWith('/blogs') || pathname.startsWith('/articles'))) ||
                       (item.href === '/approvals' && pathname.startsWith('/approvals')) ||
                       (item.href !== '/' && item.href !== '/admin' && pathname.startsWith(item.href));
 
