@@ -7,10 +7,9 @@ import { Button } from '@/src/components/ui/Button';
 import { Badge } from '@/src/components/ui/Badge';
 import { Table } from '@/src/components/ui/Table';
 import { LoadingState, ErrorState } from '@/src/components/ui/States';
-import { Bookmark, Bell, Play, Trash2, BellRing } from 'lucide-react';
+import { Bookmark, Bell, Play, Trash2, BellRing, Filter, Search } from 'lucide-react';
 import Link from 'next/link';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
+import { kmsApi } from '@/src/lib/api';
 
 interface SavedSearch {
   id: string;
@@ -22,6 +21,42 @@ interface SavedSearch {
   lastAlertAt?: string;
 }
 
+interface ParsedQuery {
+  queryText: string;
+  deptId?: string;
+  docTypeId?: string;
+  confidentiality?: string;
+  sortBy?: string;
+}
+
+function parseQueryDefinition(queryJson: string): ParsedQuery {
+  if (!queryJson) return { queryText: '' };
+  try {
+    const parsed = JSON.parse(queryJson);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return {
+        queryText: parsed.query || '',
+        deptId: parsed.deptId,
+        docTypeId: parsed.docTypeId,
+        confidentiality: parsed.confidentiality,
+        sortBy: parsed.sortBy,
+      };
+    }
+  } catch {}
+  return { queryText: queryJson };
+}
+
+function buildRunSearchUrl(queryJson: string): string {
+  const parsed = parseQueryDefinition(queryJson);
+  const params = new URLSearchParams();
+  if (parsed.queryText) params.set('q', parsed.queryText);
+  if (parsed.deptId) params.set('deptId', parsed.deptId);
+  if (parsed.docTypeId) params.set('docTypeId', parsed.docTypeId);
+  if (parsed.confidentiality) params.set('confidentiality', parsed.confidentiality);
+  if (parsed.sortBy) params.set('sortBy', parsed.sortBy);
+  return `/search?${params.toString()}`;
+}
+
 export default function SavedSearchesPage() {
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,15 +66,11 @@ export default function SavedSearchesPage() {
     setLoading(true);
     setError(null);
     try {
-      const token = sessionStorage.getItem('kms_access_token');
-      const res = await fetch(`${API_BASE_URL}/search/saved`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(`Failed to fetch saved searches (${res.status})`);
-      const data: SavedSearch[] = await res.json();
-      setSavedSearches(data);
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred.');
+      const data = await kmsApi.savedSearches.list();
+      setSavedSearches(Array.isArray(data) ? data : []);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch saved searches.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -51,45 +82,28 @@ export default function SavedSearchesPage() {
 
   const handleDelete = async (id: string) => {
     try {
-      const token = sessionStorage.getItem('kms_access_token');
-      const res = await fetch(`${API_BASE_URL}/search/saved/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error(`Failed to delete saved search (${res.status})`);
-      await fetchSavedSearches();
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete saved search.');
+      await kmsApi.savedSearches.delete(id);
+      setSavedSearches((prev) => prev.filter((s) => s.id !== id));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete saved search.');
     }
   };
 
   const handleToggleAlert = async (id: string, current: boolean) => {
     try {
-      const token = sessionStorage.getItem('kms_access_token');
-      const res = await fetch(`${API_BASE_URL}/search/saved/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ alertEnabled: !current }),
-      });
-      if (!res.ok) throw new Error(`Failed to update alert setting (${res.status})`);
+      await kmsApi.savedSearches.update(id, { alertEnabled: !current });
       setSavedSearches((prev) => prev.map((s) => s.id === id ? { ...s, alertEnabled: !current } : s));
-    } catch (err: any) {
-      alert(err.message || 'Failed to update alert.');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to update alert.');
     }
   };
 
   const handleFrequencyChange = async (id: string, freq: string) => {
     try {
-      const token = sessionStorage.getItem('kms_access_token');
-      const res = await fetch(`${API_BASE_URL}/search/saved/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ alertFrequency: freq }),
-      });
-      if (!res.ok) throw new Error(`Failed to update frequency (${res.status})`);
+      await kmsApi.savedSearches.update(id, { alertFrequency: freq });
       setSavedSearches((prev) => prev.map((s) => s.id === id ? { ...s, alertFrequency: freq } : s));
-    } catch (err: any) {
-      alert(err.message || 'Failed to update frequency.');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to update frequency.');
     }
   };
 
@@ -99,17 +113,34 @@ export default function SavedSearchesPage() {
       accessor: (item: SavedSearch) => (
         <div className="font-semibold text-kms-slate-900 flex items-center gap-2">
           <Bookmark className="w-4 h-4 text-blue-700 shrink-0" />
-          {item.name}
+          <span>{item.name}</span>
         </div>
       ),
     },
     {
-      header: 'Query Definition',
-      accessor: (item: SavedSearch) => (
-        <span className="font-mono text-xs bg-kms-slate-100 px-2 py-1 rounded text-kms-slate-800">
-          {item.queryJson}
-        </span>
-      ),
+      header: 'Query & Filters',
+      accessor: (item: SavedSearch) => {
+        const parsed = parseQueryDefinition(item.queryJson);
+        return (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-mono text-xs bg-kms-slate-100 px-2 py-0.5 rounded text-kms-slate-800 font-semibold">
+                {parsed.queryText || '(all documents)'}
+              </span>
+              {parsed.confidentiality && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 font-medium">
+                  {parsed.confidentiality}
+                </span>
+              )}
+              {parsed.sortBy && parsed.sortBy !== 'relevance' && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+                  Sort: {parsed.sortBy}
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
     {
       header: 'Created',
@@ -148,7 +179,7 @@ export default function SavedSearchesPage() {
       header: 'Actions',
       accessor: (item: SavedSearch) => (
         <div className="flex items-center gap-1">
-          <Link href={`/search?q=${encodeURIComponent(item.queryJson)}`}>
+          <Link href={buildRunSearchUrl(item.queryJson)}>
             <Button variant="outline" size="sm" icon={<Play className="w-3.5 h-3.5" />}>
               Run Query
             </Button>
@@ -198,3 +229,4 @@ export default function SavedSearchesPage() {
     </AppShell>
   );
 }
+

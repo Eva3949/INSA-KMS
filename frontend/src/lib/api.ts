@@ -454,6 +454,45 @@ export const kmsApi = {
       }),
   },
 
+  // Saved Searches & Alerts (FR-15)
+  savedSearches: {
+    list: () => fetchApi<Array<{
+      id: string;
+      name: string;
+      queryJson: string;
+      createdAt: string;
+      alertEnabled?: boolean;
+      alertFrequency?: string;
+      lastAlertAt?: string;
+    }>>('/search/saved'),
+    create: (payload: {
+      name: string;
+      queryJson: string;
+      alertEnabled?: boolean;
+      alertFrequency?: string;
+    }) =>
+      fetchApi<{
+        id: string;
+        name: string;
+        queryJson: string;
+        createdAt: string;
+        alertEnabled?: boolean;
+        alertFrequency?: string;
+      }>('/search/saved', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    update: (id: string, payload: { alertEnabled?: boolean; alertFrequency?: string }) =>
+      fetchApi<{ status: string }>(`/search/saved/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }),
+    delete: (id: string) =>
+      fetchApi<{ status: string }>(`/search/saved/${id}`, {
+        method: 'DELETE',
+      }),
+  },
+
   // Governance & Compliance
   governance: {
     getRetentionPolicies: () => fetchApi<any[]>('/governance/retention'),

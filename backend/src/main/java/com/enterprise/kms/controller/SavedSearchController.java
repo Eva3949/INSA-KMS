@@ -1,6 +1,7 @@
 package com.enterprise.kms.controller;
 
 import com.enterprise.kms.annotation.AuditLog;
+import com.enterprise.kms.entity.User;
 import com.enterprise.kms.security.SecurityUtils;
 import com.enterprise.kms.service.SavedSearchService;
 import com.enterprise.kms.repository.UserRepository;
@@ -25,30 +26,33 @@ public class SavedSearchController {
     @GetMapping
     @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
     public ResponseEntity<?> listSavedSearches() {
-        UUID userId = resolveUserId();
-        if (userId == null) return ResponseEntity.ok(java.util.List.of());
-        return ResponseEntity.ok(savedSearchService.listSavedSearches(userId));
+        User user = resolveUser();
+        if (user == null) return ResponseEntity.ok(java.util.List.of());
+        return ResponseEntity.ok(savedSearchService.listSavedSearches(user.getId()));
     }
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
     @AuditLog(action = "SAVED_SEARCH_CREATE", resourceType = "SEARCH")
     public ResponseEntity<Map<String, Object>> createSavedSearch(@RequestBody Map<String, Object> body) {
-        UUID userId = resolveUserId();
-        if (userId == null) return ResponseEntity.badRequest().build();
+        User user = resolveUser();
+        if (user == null) return ResponseEntity.badRequest().build();
         String name = (String) body.get("name");
         String queryJson = (String) body.get("queryJson");
-        Boolean alertEnabled = body.containsKey("alertEnabled") ? (Boolean) body.get("alertEnabled") : null;
-        String alertFrequency = (String) body.get("alertFrequency");
-        return ResponseEntity.ok(savedSearchService.createSavedSearch(userId, name, queryJson, alertEnabled, alertFrequency));
+        if (name == null || name.isBlank()) {
+            name = "Saved Search";
+        }
+        Boolean alertEnabled = body.containsKey("alertEnabled") ? (Boolean) body.get("alertEnabled") : false;
+        String alertFrequency = (String) body.getOrDefault("alertFrequency", "DAILY");
+        return ResponseEntity.ok(savedSearchService.createSavedSearch(user.getId(), name, queryJson, alertEnabled, alertFrequency));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
     @AuditLog(action = "SAVED_SEARCH_DELETE", resourceType = "SEARCH")
     public ResponseEntity<Map<String, Object>> deleteSavedSearch(@PathVariable UUID id) {
-        UUID userId = resolveUserId();
-        if (userId != null) savedSearchService.deleteSavedSearch(id, userId);
+        User user = resolveUser();
+        if (user != null) savedSearchService.deleteSavedSearch(id, user.getId());
         return ResponseEntity.ok(Map.of("status", "DELETED"));
     }
 
@@ -56,19 +60,24 @@ public class SavedSearchController {
     @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
     @AuditLog(action = "SAVED_SEARCH_UPDATE", resourceType = "SEARCH")
     public ResponseEntity<Map<String, Object>> updateSavedSearch(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
-        UUID userId = resolveUserId();
-        if (userId == null) return ResponseEntity.badRequest().build();
+        User user = resolveUser();
+        if (user == null) return ResponseEntity.badRequest().build();
         Boolean alertEnabled = body.containsKey("alertEnabled") ? (Boolean) body.get("alertEnabled") : null;
         String alertFrequency = (String) body.get("alertFrequency");
-        savedSearchService.updateSavedSearch(id, userId, alertEnabled, alertFrequency);
+        savedSearchService.updateSavedSearch(id, user.getId(), alertEnabled, alertFrequency);
         return ResponseEntity.ok(Map.of("status", "UPDATED"));
     }
 
-    private UUID resolveUserId() {
+    private User resolveUser() {
         String username = SecurityUtils.getCurrentUsername();
         return userRepository.findByUsername(username)
-                .or(() -> userRepository.findByKeycloakSub("sub-" + username))
-                .map(u -> u.getId())
-                .orElse(null);
+                .or(() -> userRepository.findByKeycloakSub(SecurityUtils.getCurrentUserSub()))
+                .orElseGet(() -> {
+                    User u = new User();
+                    u.setUsername(username);
+                    u.setEmail(SecurityUtils.getCurrentUserEmail());
+                    u.setKeycloakSub(SecurityUtils.getCurrentUserSub());
+                    return userRepository.save(u);
+                });
     }
 }

@@ -19,6 +19,7 @@ public class SavedSearch {
     private String name;
 
     @Column(name = "query_json", nullable = false, columnDefinition = "JSONB")
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     private String queryJson;
 
     @Column(name = "created_at", nullable = false, updatable = false)

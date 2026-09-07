@@ -45,6 +45,10 @@ function AdvancedSearchContent() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
+  const [saveErrorMsg, setSaveErrorMsg] = useState<string | null>(null);
+
   React.useEffect(() => {
     kmsApi.departments.getActive()
       .then((data) => {
@@ -86,13 +90,70 @@ function AdvancedSearchContent() {
   };
 
   React.useEffect(() => {
-    const urlQ = searchParams?.get('q') || searchParams?.get('query');
-    if (urlQ && urlQ.trim()) {
+    const urlQ = searchParams?.get('q') || searchParams?.get('query') || '';
+    const urlDept = searchParams?.get('deptId') || searchParams?.get('departmentId') || 'ALL';
+    const urlDocType = searchParams?.get('docTypeId') || searchParams?.get('documentTypeId') || 'ALL';
+    const urlClass = searchParams?.get('confidentiality') || searchParams?.get('classification') || 'ALL';
+    const urlSort = searchParams?.get('sortBy') || searchParams?.get('sort') || 'relevance';
+
+    if (urlQ.trim() || urlDept !== 'ALL' || urlDocType !== 'ALL' || urlClass !== 'ALL') {
       const trimmed = urlQ.trim();
       setQuery(trimmed);
-      executeSearch(trimmed);
+      setSelectedDept(urlDept);
+      setSelectedDocType(urlDocType);
+      setSelectedClass(urlClass);
+      setSortBy(urlSort);
+
+      setIsLoading(true);
+      setError(null);
+      setHasSearched(true);
+      kmsApi.search.advanced(trimmed, {
+        deptId: urlDept !== 'ALL' ? urlDept : undefined,
+        docTypeId: urlDocType !== 'ALL' ? urlDocType : undefined,
+        confidentiality: urlClass !== 'ALL' ? urlClass : undefined,
+      })
+        .then((data) => {
+          const items = Array.isArray(data) ? data : (data as { content?: SearchResult[] }).content ?? [];
+          setResults(items as SearchResult[]);
+        })
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : 'Search failed';
+          setError(msg.includes('403') ? 'You do not have permission to perform searches.' : msg);
+          setResults([]);
+        })
+        .finally(() => setIsLoading(false));
     }
   }, [searchParams]);
+
+  const handleSaveSearch = async () => {
+    if (!query.trim() || isSaving) return;
+    setIsSaving(true);
+    setSaveSuccessMsg(null);
+    setSaveErrorMsg(null);
+    try {
+      const searchConfig = {
+        query: query.trim(),
+        deptId: selectedDept !== 'ALL' ? selectedDept : undefined,
+        docTypeId: selectedDocType !== 'ALL' ? selectedDocType : undefined,
+        confidentiality: selectedClass !== 'ALL' ? selectedClass : undefined,
+        sortBy: sortBy !== 'relevance' ? sortBy : undefined,
+      };
+
+      await kmsApi.savedSearches.create({
+        name: query.trim(),
+        queryJson: JSON.stringify(searchConfig),
+      });
+
+      setSaveSuccessMsg(`Search "${query.trim()}" saved to your Saved Searches list!`);
+      setTimeout(() => setSaveSuccessMsg(null), 5000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to save search. Please try again.';
+      setSaveErrorMsg(msg);
+      setTimeout(() => setSaveErrorMsg(null), 6000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') executeSearch();
@@ -217,27 +278,30 @@ function AdvancedSearchContent() {
               {query.trim() && (
                 <button
                   type="button"
-                  onClick={async () => {
-                    try {
-                      const token = sessionStorage.getItem('kms_access_token');
-                      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8081/api/v1';
-                      const res = await fetch(`${API_BASE_URL}/search/saved`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                        body: JSON.stringify({ name: query, queryJson: query }),
-                      });
-                      if (!res.ok) throw new Error('Failed to save');
-                      alert(`Search "${query}" saved to your Saved Searches list!`);
-                    } catch (err) {
-                      alert(err instanceof Error ? err.message : 'Failed to save search');
-                    }
-                  }}
-                  className="text-blue-700 hover:underline font-semibold flex items-center gap-1 text-xs"
+                  onClick={handleSaveSearch}
+                  disabled={isSaving}
+                  className="text-blue-700 hover:text-blue-900 font-semibold flex items-center gap-1 text-xs disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed transition-colors"
                 >
-                  <Bookmark className="w-3.5 h-3.5" /> Save This Search
+                  <Bookmark className={`w-3.5 h-3.5 ${isSaving ? 'animate-pulse text-blue-500' : ''}`} />
+                  {isSaving ? 'Saving Search...' : 'Save This Search'}
                 </button>
               )}
             </div>
+
+            {/* Save Search Feedback Notices */}
+            {saveSuccessMsg && (
+              <div className="p-2.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center justify-between">
+                <span>✓ {saveSuccessMsg}</span>
+                <Link href="/search/saved" className="text-emerald-700 underline font-bold ml-2">
+                  View Saved Searches →
+                </Link>
+              </div>
+            )}
+            {saveErrorMsg && (
+              <div className="p-2.5 rounded bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium">
+                <span>✕ {saveErrorMsg}</span>
+              </div>
+            )}
 
             {/* Facets & Filter Controls */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">

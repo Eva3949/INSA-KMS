@@ -41,6 +41,8 @@ public class SavedSearchService {
         return rows;
     }
 
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
     @Transactional
     public Map<String, Object> createSavedSearch(UUID userId, String name, String queryJson,
                                                    Boolean alertEnabled, String alertFrequency) {
@@ -48,14 +50,34 @@ public class SavedSearchService {
         if (user == null) throw new org.springframework.web.server.ResponseStatusException(
                 org.springframework.http.HttpStatus.NOT_FOUND, "User not found");
 
+        String validJson = normalizeJson(queryJson);
+        String cleanName = (name != null && !name.isBlank()) ? name.trim() : "Saved Search";
+
         SavedSearch ss = new SavedSearch();
         ss.setUser(user);
-        ss.setName(name);
-        ss.setQueryJson(queryJson);
-        if (alertEnabled != null) ss.setAlertEnabled(alertEnabled);
-        if (alertFrequency != null && !alertFrequency.isBlank()) ss.setAlertFrequency(alertFrequency);
+        ss.setName(cleanName);
+        ss.setQueryJson(validJson);
+        ss.setAlertEnabled(alertEnabled != null ? alertEnabled : false);
+        ss.setAlertFrequency((alertFrequency != null && !alertFrequency.isBlank()) ? alertFrequency : "DAILY");
         ss = savedSearchRepository.save(ss);
         return toMap(ss);
+    }
+
+    private String normalizeJson(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "{}";
+        }
+        String trimmed = raw.trim();
+        try {
+            objectMapper.readTree(trimmed);
+            return trimmed;
+        } catch (Exception e) {
+            try {
+                return objectMapper.writeValueAsString(Map.of("query", trimmed));
+            } catch (Exception ex) {
+                return "{\"query\":\"" + trimmed.replace("\"", "\\\"") + "\"}";
+            }
+        }
     }
 
     @Transactional
