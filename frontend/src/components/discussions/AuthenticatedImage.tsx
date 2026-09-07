@@ -50,7 +50,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     })
       .then((res) => {
         if (!res.ok) {
-          throw new Error(`Failed to load image (${res.status})`);
+          throw new Error(`HTTP ${res.status}`);
         }
         return res.blob();
       })
@@ -63,11 +63,20 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         setBlobSrc(newUrl);
         setIsLoading(false);
       })
-      .catch((err) => {
+      .catch((err: any) => {
         if (abortController.signal.aborted) return;
-        // Fallback to URL with query token parameter
-        setBlobSrc(fallbackUrl);
-        setIsLoading(false);
+        const statusMatch = err?.message?.match(/HTTP (\d+)/);
+        const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+        if (status === 404 || status >= 500) {
+          setHasError(true);
+          setIsLoading(false);
+        } else if (fallbackUrl && fallbackUrl !== src) {
+          setBlobSrc(fallbackUrl);
+          setIsLoading(false);
+        } else {
+          setHasError(true);
+          setIsLoading(false);
+        }
       });
 
     return () => {
@@ -103,14 +112,8 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
             decoding="async"
             onLoad={() => setIsLoading(false)}
             onError={() => {
-              // If blob failed and wasn't already the fallback, try fallback
-              const fallback = getAuthenticatedMediaUrl(src);
-              if (blobSrc !== fallback) {
-                setBlobSrc(fallback);
-              } else {
-                setHasError(true);
-                setIsLoading(false);
-              }
+              setHasError(true);
+              setIsLoading(false);
             }}
             className={`${imgClassName} ${isLoading ? 'hidden' : 'block'}`}
           />

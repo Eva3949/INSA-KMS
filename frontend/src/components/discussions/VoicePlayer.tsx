@@ -53,9 +53,15 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
         const url = URL.createObjectURL(blob);
         setAudioBlobUrl(url);
       })
-      .catch((err) => {
+      .catch((err: any) => {
         if (!controller.signal.aborted) {
-          setAudioBlobUrl(fallbackUrl);
+          const statusMatch = err?.message?.match(/HTTP (\d+)/);
+          const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+          if (status === 404 || status >= 500) {
+            setIsLoading(false);
+          } else if (fallbackUrl && fallbackUrl !== src) {
+            setAudioBlobUrl(fallbackUrl);
+          }
         }
       });
 
@@ -64,7 +70,7 @@ export const VoicePlayer: React.FC<VoicePlayerProps> = ({
     };
   }, [src]);
 
-  const effectiveSrc = audioBlobUrl || getAuthenticatedMediaUrl(src);
+  const effectiveSrc = audioBlobUrl || (src.startsWith('blob:') || src.startsWith('data:') ? src : '');
 
 
   const togglePlay = () => {
