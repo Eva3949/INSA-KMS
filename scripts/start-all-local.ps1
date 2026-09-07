@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # INSA-KMS: Start All Local Services
 # Starts: Keycloak 26.7.2 --> imports realm --> prints instructions for
 #         backend (Spring Boot) and frontend (Next.js)
@@ -7,7 +7,10 @@
 
 $ScriptDir = $PSScriptRoot
 $ProjectRoot = (Resolve-Path "$ScriptDir\..").Path
-$KC_HOME = "C:\keycloak-26.7.2\keycloak-26.7.2"
+$KC_HOME = "C:\keycloak-26.7.2"
+if (-not (Test-Path "$KC_HOME\bin\kc.bat") -and (Test-Path "C:\keycloak-26.7.2\keycloak-26.7.2\bin\kc.bat")) {
+    $KC_HOME = "C:\keycloak-26.7.2\keycloak-26.7.2"
+}
 
 Write-Host ""
 Write-Host "===========================================================" -ForegroundColor Cyan

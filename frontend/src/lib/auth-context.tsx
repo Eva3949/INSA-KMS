@@ -18,6 +18,7 @@ export interface AuthUser {
   fullName: string;
   department?: string;
   roles: UserRole[];
+  avatarUrl?: string | null;
 }
 
 interface AuthContextValue {
@@ -164,6 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 fullName: formattedName,
                 department: data.department,
                 roles: (data.roles || []) as UserRole[],
+                avatarUrl: data.avatarUrl || null,
               });
               setIsLoading(false);
             }
@@ -196,6 +198,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           fullName: formattedName,
           department: data.department,
           roles: (data.roles || []) as UserRole[],
+          avatarUrl: data.avatarUrl || null,
         });
       }
     } catch (err) {

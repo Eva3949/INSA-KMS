@@ -308,4 +308,104 @@ public class StorageService {
         }
         return mediaPath;
     }
+
+    public String storeAvatar(MultipartFile file, String username) {
+        try {
+            if (file == null || file.isEmpty()) {
+                throw new IllegalArgumentException("Avatar file must not be empty");
+            }
+
+            String originalFilename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "avatar.png";
+            String sanitized = sanitize(originalFilename);
+            String ext = "";
+            int dotIdx = sanitized.lastIndexOf('.');
+            if (dotIdx >= 0) {
+                ext = sanitized.substring(dotIdx).toLowerCase();
+            }
+            if (!ext.equals(".png") && !ext.equals(".jpg") && !ext.equals(".jpeg") && !ext.equals(".webp")) {
+                ext = ".png";
+            }
+
+            String safeUserPrefix = (username != null && !username.isBlank()) ? username.replaceAll("[^a-zA-Z0-9_]", "_") : "user";
+            String storedName = "avatar_" + safeUserPrefix + "_" + UUID.randomUUID() + ext;
+
+            Path avatarDir = this.storageLocation.resolve("avatars");
+            Files.createDirectories(avatarDir);
+            Path targetPath = avatarDir.resolve(storedName);
+            Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+
+            // Also mirror to frontend public images/avatars if available
+            if (this.frontendPublicImagesPath != null) {
+                try {
+                    Path publicAvatarDir = this.frontendPublicImagesPath.resolve("avatars");
+                    Files.createDirectories(publicAvatarDir);
+                    Files.copy(targetPath, publicAvatarDir.resolve(storedName), StandardCopyOption.REPLACE_EXISTING);
+                } catch (Exception e) {
+                    log.debug("Could not mirror avatar to frontend public dir", e);
+                }
+            }
+
+            return "/api/v1/users/avatar/" + storedName;
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Failed to store user avatar", e);
+            throw new RuntimeException("Could not store profile photo: " + e.getMessage(), e);
+        }
+    }
+
+    public Path loadAvatar(String filename) {
+        if (filename == null || filename.isBlank()) {
+            throw new IllegalArgumentException("Avatar filename is required");
+        }
+        if (filename.contains("..") || filename.contains("/") || filename.contains("\\") || filename.contains("\0")) {
+            throw new SecurityException("Invalid avatar path traversal sequence");
+        }
+        String clean = sanitize(filename);
+
+        Path primary = this.storageLocation.resolve("avatars").resolve(clean).normalize();
+        if (Files.exists(primary) && Files.isReadable(primary)) {
+            return primary;
+        }
+
+        if (this.frontendPublicImagesPath != null) {
+            Path fallback = this.frontendPublicImagesPath.resolve("avatars").resolve(clean).normalize();
+            if (Files.exists(fallback) && Files.isReadable(fallback)) {
+                return fallback;
+            }
+        }
+
+        throw new RuntimeException("Avatar file not found: " + filename);
+    }
+
+    public void deleteAvatarFile(String avatarUrlOrPath) {
+        if (avatarUrlOrPath == null || avatarUrlOrPath.isBlank()) {
+            return;
+        }
+        try {
+            String filename = avatarUrlOrPath;
+            int lastSlash = filename.lastIndexOf('/');
+            if (lastSlash >= 0) {
+                filename = filename.substring(lastSlash + 1);
+            }
+            int lastBackslash = filename.lastIndexOf('\\');
+            if (lastBackslash >= 0) {
+                filename = filename.substring(lastBackslash + 1);
+            }
+            String clean = sanitize(filename);
+            if (clean.contains("..") || clean.contains("\0")) {
+                return;
+            }
+
+            Path primary = this.storageLocation.resolve("avatars").resolve(clean).normalize();
+            Files.deleteIfExists(primary);
+
+            if (this.frontendPublicImagesPath != null) {
+                Path fallback = this.frontendPublicImagesPath.resolve("avatars").resolve(clean).normalize();
+                Files.deleteIfExists(fallback);
+            }
+        } catch (Exception e) {
+            log.warn("Could not delete previous avatar file: {}", avatarUrlOrPath, e);
+        }
+    }
 }

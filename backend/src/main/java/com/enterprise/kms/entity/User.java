@@ -57,6 +57,9 @@ public class User {
     @Column(name = "hire_date")
     private java.time.LocalDate hireDate;
 
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -101,4 +104,7 @@ public class User {
 
     public java.time.LocalDate getHireDate() { return hireDate; }
     public void setHireDate(java.time.LocalDate hireDate) { this.hireDate = hireDate; }
+
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
 }

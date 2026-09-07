@@ -78,9 +78,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ user, onToggleMobileMenu }
 
           {/* User Profile Info */}
           <Link href="/profile" className="flex items-center gap-2 text-slate-800 hover:text-blue-800 font-semibold border-l border-slate-200 pl-2.5 sm:pl-4">
-            <div className="w-7 h-7 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-              {initials}
-            </div>
+            {user?.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt={displayName}
+                className="w-7 h-7 rounded-full object-cover border border-slate-300 shadow-xs shrink-0"
+              />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
+                {initials}
+              </div>
+            )}
             <div className="hidden lg:block text-left leading-tight max-w-[150px]">
               <div className="text-slate-900 font-bold truncate">{displayName}</div>
               {displayDept && (

@@ -2,16 +2,16 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { 
-  Trophy, 
-  Award, 
-  Medal, 
-  FileText, 
-  BookOpen, 
-  FileEdit, 
-  Flame, 
-  Sparkles, 
-  Building2, 
+import {
+  Trophy,
+  Award,
+  Medal,
+  FileText,
+  BookOpen,
+  FileEdit,
+  Flame,
+  Sparkles,
+  Building2,
   Briefcase,
   Calendar,
   Pin,
@@ -28,6 +28,7 @@ export interface TopContributor {
   department?: string;
   jobTitle?: string;
   profileImage?: string | null;
+  avatarUrl?: string | null;
   documents: number;
   blogs: number;
   articles: number;
@@ -76,10 +77,10 @@ export const TopContributorsSection: React.FC<TopContributorsSectionProps> = ({
 
   const evaluationDate = contributors.length > 0 && contributors[0].evaluatedAt
     ? new Date(contributors[0].evaluatedAt).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
     : null;
 
   const getRankBadge = (rank: number) => {
@@ -271,13 +272,24 @@ export const TopContributorsSection: React.FC<TopContributorsSectionProps> = ({
 
                   {/* Profile & Name Details */}
                   <div className="flex items-start gap-3 mb-3.5">
-                    <div
-                      className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs ${getAvatarBg(
-                        c.rank
-                      )}`}
-                    >
-                      {getInitials(c.name)}
-                    </div>
+                    {c.profileImage || c.avatarUrl ? (
+                      <img
+                        src={c.profileImage || c.avatarUrl || ''}
+                        alt={c.name}
+                        className="w-11 h-11 rounded-full object-cover shrink-0 shadow-2xs border border-slate-200"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs ${getAvatarBg(
+                          c.rank
+                        )}`}
+                      >
+                        {getInitials(c.name)}
+                      </div>
+                    )}
 
                     <div className="min-w-0 flex-1">
                       <h3 className="text-sm font-bold text-slate-900 truncate leading-snug">

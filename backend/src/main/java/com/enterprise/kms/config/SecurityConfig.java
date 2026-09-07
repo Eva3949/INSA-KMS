@@ -46,6 +46,7 @@ public class SecurityConfig {
                     "/api/v1/shares/**",
                     "/api/v1/documents/media/**",
                     "/api/v1/media/**",
+                    "/api/v1/users/avatar/**",
                     "/images/**",
                     "/api/v1/admin/settings/storage-config",
                     "/api/v1/auth/forgot-password",

@@ -361,17 +361,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
         {user && (
           <div className="flex items-center gap-2.5 p-2 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-colors">
             <div className="relative shrink-0">
-              <div
-                className={`w-8 h-8 rounded-lg text-white flex items-center justify-center font-bold text-xs shadow-xs ${
-                  isSuperAdmin
-                    ? 'bg-gradient-to-tr from-amber-600 to-orange-500'
-                    : isAdmin
-                    ? 'bg-gradient-to-tr from-blue-600 to-indigo-600'
-                    : 'bg-gradient-to-tr from-slate-700 to-slate-900'
-                }`}
-              >
-                {userInitials}
-              </div>
+              {user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.fullName || user.username}
+                  className="w-8 h-8 rounded-lg object-cover border border-slate-300 shadow-xs"
+                />
+              ) : (
+                <div
+                  className={`w-8 h-8 rounded-lg text-white flex items-center justify-center font-bold text-xs shadow-xs ${
+                    isSuperAdmin
+                      ? 'bg-gradient-to-tr from-amber-600 to-orange-500'
+                      : isAdmin
+                      ? 'bg-gradient-to-tr from-blue-600 to-indigo-600'
+                      : 'bg-gradient-to-tr from-slate-700 to-slate-900'
+                  }`}
+                >
+                  {userInitials}
+                </div>
+              )}
               {/* Pulsing online status indicator */}
               <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full animate-pulse" />
             </div>

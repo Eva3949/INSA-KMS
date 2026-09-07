@@ -1,10 +1,13 @@
-﻿# ==============================================================================
+# ==============================================================================
 # INSA-KMS: Start Keycloak 26.7.2 Local Development Server
 # Usage: .\scripts\start-keycloak.ps1  (from project root)
 #        or double-click in Explorer
 # ==============================================================================
 
-$KC_HOME    = "C:\keycloak-26.7.2\keycloak-26.7.2"
+$KC_HOME = "C:\keycloak-26.7.2"
+if (-not (Test-Path "$KC_HOME\bin\kc.bat") -and (Test-Path "C:\keycloak-26.7.2\keycloak-26.7.2\bin\kc.bat")) {
+    $KC_HOME = "C:\keycloak-26.7.2\keycloak-26.7.2"
+}
 $KC_BIN     = "$KC_HOME\bin\kc.bat"
 $IMPORT_DIR = "$KC_HOME\data\import"
 $REALM_SRC  = Join-Path $PSScriptRoot "..\keycloak\kms-realm.json"

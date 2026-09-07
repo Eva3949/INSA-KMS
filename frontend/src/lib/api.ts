@@ -183,8 +183,39 @@ export const kmsApi = {
   getHealthStatus: () => fetchApi<{ status: string; service: string }>('/health'),
 
   // Users Profile
-  getCurrentUser: () => fetchApi<{ id?: string; username: string; email: string; fullName: string; department?: string; roles: string[] }>('/users/me'),
+  getCurrentUser: () => fetchApi<{ id?: string; username: string; email: string; fullName: string; department?: string; roles: string[]; avatarUrl?: string | null; jobTitle?: string; phone?: string; employmentStatus?: string }>('/users/me'),
   getMyApprovals: () => fetchApi<any[]>('/users/me/approvals'),
+  users: {
+    uploadAvatar: async (file: File) => {
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('kms_access_token') : null;
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch(`${API_BASE_URL}/users/me/avatar`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+      if (!res.ok) {
+        let errText = '';
+        try {
+          const json = await res.json();
+          errText = json.message || json.error || '';
+        } catch {
+          errText = await res.text();
+        }
+        throw new Error(errText || `Upload failed [${res.status}]: ${res.statusText}`);
+      }
+      return res.json() as Promise<{ status: string; message: string; avatarUrl: string; username: string }>;
+    },
+    deleteAvatar: () =>
+      fetchApi<{ status: string; message: string; avatarUrl: null }>('/users/me/avatar', {
+        method: 'DELETE',
+      }),
+  },
 
   // Departments & Categories Active Lookup
   departments: {

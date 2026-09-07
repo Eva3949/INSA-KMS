@@ -23,7 +23,8 @@ import java.util.UUID;
 @Service
 public class AnalyticsService {
     private static final Logger log = LoggerFactory.getLogger(AnalyticsService.class);
-    private static final DateTimeFormatter MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH);
+    private static final DateTimeFormatter MONTH_LABEL_FORMATTER = DateTimeFormatter.ofPattern("MMMM yyyy",
+            Locale.ENGLISH);
 
     private final UserRepository userRepository;
     private final MonthlyTopContributorRepository monthlyRepository;
@@ -34,8 +35,10 @@ public class AnalyticsService {
     }
 
     /**
-     * Retrieves the Monthly Top Contributors for the specified month (e.g. "2026-09").
-     * Once evaluated, rankings remain pinned in the monthly_top_contributors table for that month.
+     * Retrieves the Monthly Top Contributors for the specified month (e.g.
+     * "2026-09").
+     * Once evaluated, rankings remain pinned in the monthly_top_contributors table
+     * for that month.
      */
     @Transactional
     public List<TopContributorDto> getMonthlyTopContributors(String targetYearMonth, int limit) {
@@ -76,7 +79,8 @@ public class AnalyticsService {
         // Query performance for content created within this month
         List<Object[]> rows = userRepository.findMonthlyTopContributorsNative(start, end, effLimit);
 
-        // If no content was created in this month yet, fallback to all-time active users to avoid empty initial states
+        // If no content was created in this month yet, fallback to all-time active
+        // users to avoid empty initial states
         if (rows.isEmpty() || rows.stream().allMatch(r -> getNum(r[9]) == 0L)) {
             List<Object[]> fallbackRows = userRepository.findTopContributorsNative(effLimit);
             if (!fallbackRows.isEmpty()) {
@@ -94,10 +98,12 @@ public class AnalyticsService {
         for (Object[] row : rows) {
             try {
                 UUID employeeId = parseUuid(row[0]);
-                if (employeeId == null) continue;
+                if (employeeId == null)
+                    continue;
 
                 User user = userRepository.findById(employeeId).orElse(null);
-                if (user == null) continue;
+                if (user == null)
+                    continue;
 
                 long docs = getNum(row[6]);
                 long blogs = getNum(row[7]);
@@ -115,8 +121,7 @@ public class AnalyticsService {
                         blogs,
                         articles,
                         total,
-                        now
-                );
+                        now);
                 savedEntities.add(monthlyRepository.save(entity));
             } catch (Exception ex) {
                 log.error("Error persisting monthly top contributor for {}: {}", ymStr, ex.getMessage(), ex);
@@ -127,7 +132,8 @@ public class AnalyticsService {
     }
 
     /**
-     * Automatic Scheduled Evaluation: Runs on the 1st day of every month at midnight UTC.
+     * Automatic Scheduled Evaluation: Runs on the 1st day of every month at
+     * midnight UTC.
      */
     @Scheduled(cron = "0 0 0 1 * ?", zone = "UTC")
     public void scheduledMonthlyEvaluation() {
@@ -162,15 +168,14 @@ public class AnalyticsService {
                     email,
                     dept,
                     title,
-                    null,
+                    u != null ? u.getAvatarUrl() : null,
                     e.getDocumentsCount(),
                     e.getBlogsCount(),
                     e.getArticlesCount(),
                     e.getTotalContributions(),
                     e.getYearMonth(),
                     monthLabel,
-                    e.getEvaluatedAt()
-            ));
+                    e.getEvaluatedAt()));
         }
         return dtos;
     }
@@ -184,11 +189,13 @@ public class AnalyticsService {
     }
 
     private UUID parseUuid(Object obj) {
-        if (obj instanceof UUID) return (UUID) obj;
+        if (obj instanceof UUID)
+            return (UUID) obj;
         if (obj != null) {
             try {
                 return UUID.fromString(obj.toString());
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
         return null;
     }

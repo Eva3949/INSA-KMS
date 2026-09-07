@@ -4,6 +4,7 @@ import React from 'react';
 
 interface MessageAvatarProps {
   username: string;
+  avatarUrl?: string | null;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
@@ -39,6 +40,7 @@ function getInitials(name: string): string {
 
 export const MessageAvatar: React.FC<MessageAvatarProps> = ({
   username,
+  avatarUrl,
   size = 'md',
   className = '',
 }) => {
@@ -50,6 +52,17 @@ export const MessageAvatar: React.FC<MessageAvatarProps> = ({
     md: 'w-9 h-9 text-sm font-extrabold',
     lg: 'w-11 h-11 text-base font-black',
   }[size];
+
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={username}
+        className={`rounded-full object-cover shrink-0 shadow-2xs border border-slate-200 ${sizeClasses} ${className}`}
+        title={username}
+      />
+    );
+  }
 
   return (
     <div
