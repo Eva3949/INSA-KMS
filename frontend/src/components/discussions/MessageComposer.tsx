@@ -45,6 +45,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   const audioStreamRef = useRef<MediaStream | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const previewUrlRef = useRef<string | null>(null);
 
   // Auto-resize textarea height
   useEffect(() => {
@@ -54,11 +55,14 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     }
   }, [content]);
 
-  // Clean up object URLs and recording tracks on unmount
+  // Clean up recording tracks and preview URLs on component unmount only
   useEffect(() => {
     return () => {
-      if (selectedMedia?.previewUrl) {
-        URL.revokeObjectURL(selectedMedia.previewUrl);
+      if (previewUrlRef.current) {
+        try {
+          URL.revokeObjectURL(previewUrlRef.current);
+        } catch {}
+        previewUrlRef.current = null;
       }
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
@@ -67,17 +71,20 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
         audioStreamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-  }, [selectedMedia]);
+  }, []);
 
   const clearSelectedMedia = useCallback(() => {
-    if (selectedMedia?.previewUrl) {
-      URL.revokeObjectURL(selectedMedia.previewUrl);
+    if (previewUrlRef.current) {
+      try {
+        URL.revokeObjectURL(previewUrlRef.current);
+      } catch {}
+      previewUrlRef.current = null;
     }
     setSelectedMedia(null);
     if (imageInputRef.current) {
       imageInputRef.current.value = '';
     }
-  }, [selectedMedia]);
+  }, []);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -96,6 +103,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     clearSelectedMedia();
 
     const previewUrl = URL.createObjectURL(file);
+    previewUrlRef.current = previewUrl;
     setSelectedMedia({
       file,
       mediaType: 'IMAGE',
@@ -141,6 +149,7 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
           type: mimeType || 'audio/webm',
         });
         const previewUrl = URL.createObjectURL(audioBlob);
+        previewUrlRef.current = previewUrl;
         setSelectedMedia({
           file: audioBlob,
           mediaType: 'AUDIO',
@@ -227,21 +236,24 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     const parentId = replyingTo?.id;
     const mediaToSend = selectedMedia;
 
-    setContent('');
-    setSelectedMedia(null);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
-
     try {
       await onSend(currentText, parentId, mediaToSend);
       onCancelReply();
+      setContent('');
+      setSelectedMedia(null);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
       if (mediaToSend?.previewUrl) {
-        URL.revokeObjectURL(mediaToSend.previewUrl);
+        try {
+          URL.revokeObjectURL(mediaToSend.previewUrl);
+        } catch {}
+        if (previewUrlRef.current === mediaToSend.previewUrl) {
+          previewUrlRef.current = null;
+        }
       }
     } catch {
-      setContent(currentText);
-      setSelectedMedia(mediaToSend);
+      // Keep content and selectedMedia intact on send failure
     }
   };
 

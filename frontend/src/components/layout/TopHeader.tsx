@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, LogOut, ShieldCheck, Menu } from 'lucide-react';
-import Link from 'next/link';
+import { Search, Menu } from 'lucide-react';
 import { GlobalSearchModal } from './GlobalSearchModal';
 import { NotificationDropdown } from './NotificationDropdown';
-import { useAuth } from '@/src/lib/auth-context';
+import { UserProfileDropdown } from './UserProfileDropdown';
 import { AuthUser } from '@/src/lib/auth-context';
 import { PwaInstallButton } from '@/src/components/pwa/PwaInstallButton';
 
@@ -16,19 +15,6 @@ interface TopHeaderProps {
 
 export const TopHeader: React.FC<TopHeaderProps> = ({ user, onToggleMobileMenu }) => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const { logout } = useAuth();
-
-  const initials = user?.fullName
-    ? user.fullName
-        .split(' ')
-        .map((w) => w[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    : user?.username?.slice(0, 2).toUpperCase() ?? '?';
-
-  const displayName = user?.fullName || user?.username || 'User';
-  const displayDept = user?.department || user?.email || '';
 
   return (
     <>
@@ -67,45 +53,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ user, onToggleMobileMenu }
           {/* PWA Install Action */}
           <PwaInstallButton variant="header" />
 
-          {/* Environment Status Badge */}
-          <div className="hidden md:flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-mono font-semibold text-[11px]">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-            Keycloak OIDC: Active
-          </div>
-
           {/* Notifications Trigger */}
           <NotificationDropdown user={user} />
 
-          {/* User Profile Info */}
-          <Link href="/profile" className="flex items-center gap-2 text-slate-800 hover:text-blue-800 font-semibold border-l border-slate-200 pl-2.5 sm:pl-4">
-            {user?.avatarUrl ? (
-              <img
-                src={user.avatarUrl}
-                alt={displayName}
-                className="w-7 h-7 rounded-full object-cover border border-slate-300 shadow-xs shrink-0"
-              />
-            ) : (
-              <div className="w-7 h-7 rounded-full bg-blue-700 text-white flex items-center justify-center font-bold text-xs shadow-xs shrink-0">
-                {initials}
-              </div>
-            )}
-            <div className="hidden lg:block text-left leading-tight max-w-[150px]">
-              <div className="text-slate-900 font-bold truncate">{displayName}</div>
-              {displayDept && (
-                <div className="text-[10px] text-slate-500 font-normal truncate">{displayDept}</div>
-              )}
-            </div>
-          </Link>
-
-          {/* Sign Out */}
-          <button
-            onClick={logout}
-            className="text-slate-400 hover:text-rose-600 p-1.5 rounded-full hover:bg-rose-50 transition-colors"
-            title="Sign Out"
-            aria-label="Sign Out"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+          {/* User Profile & Personal Workspace Dropdown */}
+          <UserProfileDropdown user={user} />
         </div>
       </header>
 

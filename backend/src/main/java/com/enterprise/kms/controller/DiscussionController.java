@@ -104,7 +104,7 @@ public class DiscussionController {
     }
 
     @PostMapping(value = "/{id}/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyRole('ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_ADMIN')")
     public ResponseEntity<DiscussionAttachmentDTO> uploadMedia(
             @PathVariable UUID id,
             @RequestParam("file") MultipartFile file,

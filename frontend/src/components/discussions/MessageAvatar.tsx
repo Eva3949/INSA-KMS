@@ -44,6 +44,7 @@ export const MessageAvatar: React.FC<MessageAvatarProps> = ({
   size = 'md',
   className = '',
 }) => {
+  const [imgError, setImgError] = React.useState(false);
   const initials = getInitials(username);
   const colorClass = getAvatarColor(username);
 
@@ -53,11 +54,12 @@ export const MessageAvatar: React.FC<MessageAvatarProps> = ({
     lg: 'w-11 h-11 text-base font-black',
   }[size];
 
-  if (avatarUrl) {
+  if (avatarUrl && !imgError) {
     return (
       <img
         src={avatarUrl}
         alt={username}
+        onError={() => setImgError(true)}
         className={`rounded-full object-cover shrink-0 shadow-2xs border border-slate-200 ${sizeClasses} ${className}`}
         title={username}
       />

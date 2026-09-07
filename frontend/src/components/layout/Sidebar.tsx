@@ -38,7 +38,6 @@ import {
 import { UserRole, hasRole } from '@/src/lib/auth';
 import { AuthUser } from '@/src/lib/auth-context';
 import { kmsApi } from '@/src/lib/api';
-import { PwaInstallButton } from '@/src/components/pwa/PwaInstallButton';
 
 interface SidebarProps {
   userRoles: UserRole[];
@@ -67,6 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
 
   // Navigation Filter
   const [filterQuery, setFilterQuery] = useState('');
+  const [avatarError, setAvatarError] = useState(false);
 
   // Collapsible section states (all open by default)
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -78,82 +78,48 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
     }));
   };
 
-  // Structured Navigation Groups
+  // The 6 Core Primary Navigation Items
+  const coreNavItems: NavItem[] = useMemo(() => [
+    { href: '/', label: 'Dashboard', icon: LayoutDashboard, role: 'ROLE_VIEWER' },
+    { href: '/library', label: 'Document Library', icon: Folder, role: 'ROLE_VIEWER' },
+    { href: '/blogs', label: 'Knowledge & Community', icon: FileText, role: 'ROLE_VIEWER' },
+    { href: '/approvals', label: 'Approvals & Workflows', icon: GitPullRequestArrow, role: 'ROLE_CONTENT_OWNER' },
+    { href: '/governance/audit-logs', label: 'Governance & Compliance', icon: ShieldCheck, role: 'ROLE_COMPLIANCE_OFFICER' },
+    { href: '/admin', label: 'System Administration', icon: Settings, role: 'ROLE_ADMIN' },
+  ], []);
+
+  // Quick jump search targets across all modules
+  const quickJumpItems: NavItem[] = useMemo(() => [
+    ...coreNavItems,
+    { href: '/folders', label: 'Folders & Structure', icon: Folder, role: 'ROLE_CONTRIBUTOR' },
+    { href: '/search', label: 'Advanced Search', icon: Search, role: 'ROLE_VIEWER' },
+    { href: '/discussions', label: 'Discussions & Forum', icon: Users, role: 'ROLE_VIEWER' },
+    { href: '/knowledge-transfer', label: 'Knowledge Transfer', icon: GitPullRequestArrow, role: 'ROLE_VIEWER' },
+    { href: '/governance/retention', label: 'Retention Policies', icon: FileLock2, role: 'ROLE_COMPLIANCE_OFFICER' },
+    { href: '/governance/legal-holds', label: 'Legal Holds', icon: ShieldCheck, role: 'ROLE_COMPLIANCE_OFFICER' },
+    { href: '/hr/employees', label: 'HR & Employees', icon: Users, role: 'ROLE_ADMIN' },
+    { href: '/admin/users', label: 'Users Directory', icon: Users, role: 'ROLE_ADMIN' },
+    { href: '/admin/groups', label: 'Groups & Teams', icon: UsersRound, role: 'ROLE_ADMIN' },
+    { href: '/admin/roles', label: 'Roles & Permissions', icon: ShieldCheck, role: 'ROLE_SUPER_ADMIN' },
+    { href: '/admin/permissions', label: 'Access Control Matrix', icon: KeyRound, role: 'ROLE_SUPER_ADMIN' },
+    { href: '/admin/departments', label: 'Departments & Quotas', icon: BarChart2, role: 'ROLE_ADMIN' },
+    { href: '/admin/document-types', label: 'Document Categories', icon: FileCheck2, role: 'ROLE_ADMIN' },
+    { href: '/admin/taxonomy', label: 'Taxonomy & Tags', icon: Tag, role: 'ROLE_ADMIN' },
+    { href: '/admin/storage', label: 'Storage & Integrity (MinIO)', icon: HardDrive, role: 'ROLE_SUPER_ADMIN' },
+    { href: '/admin/ocr', label: 'OCR Queue & Jobs', icon: ScanLine, role: 'ROLE_ADMIN' },
+    { href: '/admin/reports', label: 'Usage Analytics', icon: BarChart2, role: 'ROLE_ADMIN' },
+    { href: '/admin/security', label: 'Security & Integrity Alerts', icon: ShieldAlert, role: 'ROLE_SUPER_ADMIN' },
+    { href: '/admin/approvals', label: 'Approval Workflows', icon: GitPullRequestArrow, role: 'ROLE_ADMIN' },
+    { href: '/admin/settings', label: 'System Settings', icon: Settings, role: 'ROLE_SUPER_ADMIN' },
+  ], [coreNavItems]);
+
   const navSections: NavSection[] = useMemo(() => [
     {
-      id: 'workspace',
-      title: 'Workspace & Library',
-      items: [
-        { href: '/', label: 'Dashboard', icon: LayoutDashboard, role: 'ROLE_VIEWER' },
-        { href: '/library', label: 'Document Library', icon: Folder, role: 'ROLE_VIEWER' },
-        { href: '/folders', label: 'Folders & Structure', icon: Folder, role: 'ROLE_CONTRIBUTOR' },
-        { href: '/search', label: 'Advanced Search', icon: Search, role: 'ROLE_VIEWER' },
-        { href: '/search/saved', label: 'Saved Searches & Alerts', icon: BookmarkCheck, role: 'ROLE_VIEWER' },
-      ],
+      id: 'core-navigation',
+      title: 'Workspace Navigation',
+      items: coreNavItems,
     },
-    {
-      id: 'knowledge',
-      title: 'Knowledge & Community',
-      items: [
-        { href: '/blogs', label: 'Blogs & Articles', icon: FileText, role: 'ROLE_VIEWER' },
-        { href: '/discussions', label: 'Discussions & Forum', icon: Users, role: 'ROLE_VIEWER' },
-        { href: '/articles/create', label: 'Create Knowledge Article', icon: FileText, role: 'ROLE_CONTRIBUTOR' },
-        { href: '/knowledge-transfer', label: 'Knowledge Transfer', icon: GitPullRequestArrow, role: 'ROLE_VIEWER' },
-      ],
-    },
-    {
-      id: 'personal',
-      title: 'Personal Workspace',
-      items: [
-        { href: '/my-documents', label: 'My Documents', icon: User, role: 'ROLE_CONTRIBUTOR' },
-        { href: '/shared-with-me', label: 'Shared With Me', icon: Users, role: 'ROLE_VIEWER' },
-        { href: '/favorites', label: 'Starred Favorites', icon: Star, role: 'ROLE_VIEWER' },
-        { href: '/recent', label: 'Recently Opened', icon: Clock, role: 'ROLE_VIEWER' },
-        { href: '/recycle-bin', label: 'Recycle Bin', icon: Trash2, role: 'ROLE_CONTRIBUTOR' },
-      ],
-    },
-    {
-      id: 'workflow',
-      title: 'Activity & Approvals',
-      items: [
-        { href: '/notifications', label: 'Notifications', icon: Bell, role: 'ROLE_VIEWER' },
-        { href: '/my-approvals', label: 'My Submissions', icon: GitPullRequestArrow, role: 'ROLE_CONTRIBUTOR' },
-        { href: '/approvals', label: 'Approval Inbox', icon: GitPullRequestArrow, role: 'ROLE_CONTENT_OWNER' },
-        { href: '/profile', label: 'User Profile & Settings', icon: User, role: 'ROLE_VIEWER' },
-      ],
-    },
-    {
-      id: 'governance',
-      title: 'Compliance & Governance',
-      items: [
-        { href: '/governance/retention', label: 'Retention Policies', icon: FileLock2, role: 'ROLE_COMPLIANCE_OFFICER' },
-        { href: '/governance/legal-holds', label: 'Legal Holds', icon: ShieldCheck, role: 'ROLE_COMPLIANCE_OFFICER' },
-        { href: '/governance/audit-logs', label: 'Audit Logs', icon: FileText, role: 'ROLE_COMPLIANCE_OFFICER' },
-        { href: '/governance/reports', label: 'Compliance Reports', icon: BarChart2, role: 'ROLE_COMPLIANCE_OFFICER' },
-      ],
-    },
-    {
-      id: 'admin',
-      title: 'System Administration',
-      items: [
-        { href: '/admin', label: 'Admin Dashboard', icon: Settings, role: 'ROLE_ADMIN' },
-        { href: '/hr/employees', label: 'HR & Employees', icon: Users, role: 'ROLE_ADMIN' },
-        { href: '/admin/users', label: 'Users Directory', icon: Users, role: 'ROLE_ADMIN' },
-        { href: '/admin/groups', label: 'Groups & Teams', icon: UsersRound, role: 'ROLE_ADMIN' },
-        { href: '/admin/roles', label: 'Roles & Permissions', icon: ShieldCheck, role: 'ROLE_SUPER_ADMIN' },
-        { href: '/admin/permissions', label: 'Access Control Matrix', icon: KeyRound, role: 'ROLE_SUPER_ADMIN' },
-        { href: '/admin/departments', label: 'Departments & Quotas', icon: BarChart2, role: 'ROLE_ADMIN' },
-        { href: '/admin/document-types', label: 'Document Categories', icon: FileCheck2, role: 'ROLE_ADMIN' },
-        { href: '/admin/taxonomy', label: 'Taxonomy & Tags', icon: Tag, role: 'ROLE_ADMIN' },
-        { href: '/admin/storage', label: 'Storage & Integrity (MinIO)', icon: HardDrive, role: 'ROLE_SUPER_ADMIN' },
-        { href: '/admin/ocr', label: 'OCR Queue & Jobs', icon: ScanLine, role: 'ROLE_ADMIN' },
-        { href: '/admin/reports', label: 'Usage Analytics', icon: BarChart2, role: 'ROLE_ADMIN' },
-        { href: '/admin/security', label: 'Security & Integrity Alerts', icon: ShieldAlert, role: 'ROLE_SUPER_ADMIN' },
-        { href: '/admin/approvals', label: 'Approval Workflows', icon: GitPullRequestArrow, role: 'ROLE_ADMIN' },
-        { href: '/admin/settings', label: 'System Settings', icon: Settings, role: 'ROLE_SUPER_ADMIN' },
-      ],
-    },
-  ], []);
+  ], [coreNavItems]);
 
   const isAdmin = hasRole(userRoles, 'ROLE_ADMIN');
   const [storageUsed, setStorageUsed] = useState<number | null>(null);
@@ -225,29 +191,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
 
   const isSuperAdmin = userRoles.includes('ROLE_SUPER_ADMIN');
 
-  // Filter sections based on search query and user permissions
+  // Filter sections based on search query or show 6 core items
   const filteredSections = useMemo(() => {
     const query = filterQuery.trim().toLowerCase();
 
+    // If searching, search across all quick jump destinations
+    if (query) {
+      const matchedItems = quickJumpItems.filter((item) => {
+        const isAllowed = hasRole(userRoles, item.role);
+        if (!isAllowed) return false;
+        return (
+          item.label.toLowerCase().includes(query) ||
+          item.href.toLowerCase().includes(query)
+        );
+      });
+
+      return [
+        {
+          id: 'search-results',
+          title: `Matching Results (${matchedItems.length})`,
+          items: matchedItems,
+        },
+      ].filter((sec) => sec.items.length > 0);
+    }
+
+    // Default: Return the 6 core items filtered by role
     return navSections
       .map((sec) => {
-        const allowedItems = sec.items.filter((item) => {
-          const isAllowed = hasRole(userRoles, item.role);
-          if (!isAllowed) return false;
-          if (!query) return true;
-          return (
-            item.label.toLowerCase().includes(query) ||
-            item.href.toLowerCase().includes(query)
-          );
-        });
-
+        const allowedItems = sec.items.filter((item) => hasRole(userRoles, item.role));
         return {
           ...sec,
           items: allowedItems,
         };
       })
       .filter((sec) => sec.items.length > 0);
-  }, [navSections, userRoles, filterQuery]);
+  }, [navSections, quickJumpItems, userRoles, filterQuery]);
 
   const renderNavContent = (isMobile = false) => (
     <div className="flex-1 flex flex-col min-h-0 bg-white">
@@ -307,7 +285,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
                 <nav className="space-y-0.5 pt-0.5" aria-label={section.title}>
                   {section.items.map((item) => {
                     const Icon = item.icon;
-                    const isActive = pathname === item.href || (item.href !== '/' && item.href !== '/admin' && pathname.startsWith(item.href));
+                    const isActive =
+                      pathname === item.href ||
+                      (item.href === '/admin' && (pathname.startsWith('/admin') || pathname.startsWith('/hr'))) ||
+                      (item.href === '/governance/audit-logs' && pathname.startsWith('/governance')) ||
+                      (item.href === '/library' && (pathname.startsWith('/library') || pathname.startsWith('/folders') || pathname.startsWith('/search'))) ||
+                      (item.href === '/blogs' && (pathname.startsWith('/blogs') || pathname.startsWith('/discussions') || pathname.startsWith('/articles') || pathname.startsWith('/knowledge-transfer'))) ||
+                      (item.href === '/approvals' && pathname.startsWith('/approvals')) ||
+                      (item.href !== '/' && item.href !== '/admin' && pathname.startsWith(item.href));
 
                     return (
                       <Link
@@ -361,10 +346,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
         {user && (
           <div className="flex items-center gap-2.5 p-2 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-colors">
             <div className="relative shrink-0">
-              {user.avatarUrl ? (
+              {user.avatarUrl && !avatarError ? (
                 <img
                   src={user.avatarUrl}
                   alt={user.fullName || user.username}
+                  onError={() => setAvatarError(true)}
                   className="w-8 h-8 rounded-lg object-cover border border-slate-300 shadow-xs"
                 />
               ) : (
@@ -442,9 +428,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
             </div>
           </div>
         ) : null}
-
-        {/* PWA App Install Action */}
-        <PwaInstallButton variant="sidebar" />
       </div>
     </div>
   );
