@@ -248,26 +248,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
 
     // If searching, search across all quick jump destinations
     if (query) {
-      const matchedItems = quickJumpItems.filter((item) => {
-        const isAllowed = hasRole(userRoles, item.role);
-        if (!isAllowed) return false;
-        return (
-          item.label.toLowerCase().includes(query) ||
-          item.href.toLowerCase().includes(query)
-        );
-      });
-
-      return [
+      const matchedItems = quickJumpItems.filter(
+        (item) =>
+          hasRole(userRoles, item.role) &&
+          (item.label.toLowerCase().includes(query) ||
+          item.href.toLowerCase().includes(query))
+      );
+      const searchSec: NavSection[] = [
         {
           id: 'search-results',
           title: `Matching Results (${matchedItems.length})`,
           items: matchedItems,
         },
-      ].filter((sec) => sec.items.length > 0);
+      ];
+      return searchSec.filter((sec) => sec.items.length > 0);
     }
 
     // Default: Return the core items filtered by role
-    return navSections
+    const sections: NavSection[] = navSections
       .map((sec) => {
         const allowedItems = sec.items
           .filter((item) => hasRole(userRoles, item.role))
@@ -284,6 +282,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ userRoles, user, mobileOpen, o
         };
       })
       .filter((sec) => sec.items.length > 0);
+    return sections;
   }, [navSections, quickJumpItems, userRoles, filterQuery]);
 
   const renderNavContent = (isMobile = false) => (

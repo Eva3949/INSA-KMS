@@ -14,11 +14,34 @@ import {
   Send, 
   ExternalLink,
   Lock,
-  Loader2
+  Loader2,
+  Image as ImageIcon,
+  Mic,
+  Square,
+  Trash2
 } from 'lucide-react';
-import { kmsApi } from '@/src/lib/api';
+import { kmsApi, getAuthenticatedMediaUrl } from '@/src/lib/api';
 import { useAuth } from '@/src/lib/auth-context';
+import { AuthenticatedImage } from '@/src/components/discussions/AuthenticatedImage';
+import { VoicePlayer } from '@/src/components/discussions/VoicePlayer';
+import { ImageViewerModal } from '@/src/components/discussions/ImageViewerModal';
 import './DiscussionWidget.css';
+
+export interface ChatAttachment {
+  id: string;
+  discussionId: string;
+  replyId?: string | null;
+  mediaType: 'IMAGE' | 'AUDIO';
+  mimeType: string;
+  originalFilename: string;
+  objectKey: string;
+  fileSizeBytes: number;
+  durationSeconds?: number;
+  viewUrl: string;
+  downloadUrl: string;
+  uploadedBy: string;
+  createdAt: string;
+}
 
 interface TopicItem {
   id: string;
@@ -28,6 +51,7 @@ interface TopicItem {
   replyCount?: number;
   status?: string;
   createdAt?: string;
+  attachments?: ChatAttachment[];
 }
 
 interface ReplyItem {
@@ -35,10 +59,22 @@ interface ReplyItem {
   author?: string;
   content: string;
   createdAt?: string;
+  parentReplyId?: string | null;
+  attachments?: ChatAttachment[];
 }
 
 interface TopicDetail extends TopicItem {
   replies?: ReplyItem[];
+  attachments?: ChatAttachment[];
+}
+
+export interface WidgetComposerMedia {
+  file: File | Blob;
+  mediaType: 'IMAGE' | 'AUDIO';
+  durationSeconds?: number;
+  previewUrl: string;
+  filename: string;
+  sizeBytes: number;
 }
 
 function formatTimeAgo(isoString?: string): string {
@@ -75,14 +111,60 @@ export const DiscussionWidget: React.FC = () => {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  // Quick reply input state
+  // Lightbox Modal state
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; filename: string } | null>(null);
+
+  // Quick reply input & media attachment state
   const [replyContent, setReplyContent] = useState('');
+  const [selectedMedia, setSelectedMedia] = useState<WidgetComposerMedia | null>(null);
   const [submittingReply, setSubmittingReply] = useState(false);
+
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const previewUrlRef = useRef<string | null>(null);
 
   // Hide widget on login / auth pages and specific discussion detail pages
   const isLoginPage = pathname === '/login' || pathname?.startsWith('/login') || pathname === '/forgot-password';
   const isDetailPage = pathname?.startsWith('/discussions/') && pathname !== '/discussions' && pathname !== '/discussions/create';
+
+  const clearSelectedMedia = useCallback(() => {
+    if (previewUrlRef.current) {
+      try {
+        URL.revokeObjectURL(previewUrlRef.current);
+      } catch {}
+      previewUrlRef.current = null;
+    }
+    setSelectedMedia(null);
+    if (imageInputRef.current) {
+      imageInputRef.current.value = '';
+    }
+  }, []);
+
+  // Clean up recording tracks, timers, and preview URLs on component unmount
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        try {
+          URL.revokeObjectURL(previewUrlRef.current);
+        } catch {}
+        previewUrlRef.current = null;
+      }
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
 
   const loadTopics = useCallback(async () => {
     setLoading(true);
@@ -139,11 +221,157 @@ export const DiscussionWidget: React.FC = () => {
     setSelectedTopicId(null);
     setTopicDetail(null);
     setReplyContent('');
+    clearSelectedMedia();
+    cancelRecording();
+  };
+
+  // Image Selection Handler
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type.toLowerCase())) {
+      alert('Only JPG, PNG, and WEBP images are supported.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert(`Image size (${(file.size / 1024 / 1024).toFixed(1)} MB) exceeds the 5 MB limit.`);
+      return;
+    }
+
+    clearSelectedMedia();
+
+    const previewUrl = URL.createObjectURL(file);
+    previewUrlRef.current = previewUrl;
+    setSelectedMedia({
+      file,
+      mediaType: 'IMAGE',
+      previewUrl,
+      filename: file.name,
+      sizeBytes: file.size,
+    });
+  };
+
+  // Voice Note Recording Handlers
+  const startRecording = async () => {
+    if (isRecording || submittingReply || topicDetail?.status === 'CLOSED') return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      audioChunksRef.current = [];
+
+      let mimeType = 'audio/webm;codecs=opus';
+      if (typeof MediaRecorder !== 'undefined') {
+        if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          if (MediaRecorder.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
+          } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+            mimeType = 'audio/ogg;codecs=opus';
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+          } else {
+            mimeType = '';
+          }
+        }
+      }
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: mimeType || 'audio/webm',
+        });
+        const previewUrl = URL.createObjectURL(audioBlob);
+        previewUrlRef.current = previewUrl;
+        setSelectedMedia({
+          file: audioBlob,
+          mediaType: 'AUDIO',
+          durationSeconds: recordingSeconds,
+          previewUrl,
+          filename: 'voice-note.webm',
+          sizeBytes: audioBlob.size,
+        });
+
+        // Release mic track
+        if (audioStreamRef.current) {
+          audioStreamRef.current.getTracks().forEach((track) => track.stop());
+          audioStreamRef.current = null;
+        }
+      };
+
+      recorder.start(250);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      // Start timer
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => {
+          if (prev >= 300) {
+            stopRecording();
+            return 300;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      console.error('Microphone access failed:', err);
+      alert('Could not access microphone: ' + (err.message || 'Permission denied.'));
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
+        audioStreamRef.current = null;
+      }
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  };
+
+  const cancelRecording = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach((track) => track.stop());
+      audioStreamRef.current = null;
+    }
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordingSeconds(0);
+  };
+
+  const formatTimer = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
   const handleSendReply = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!replyContent.trim() || !selectedTopicId || submittingReply) return;
+    if (isRecording || submittingReply || !selectedTopicId) return;
+
+    const currentText = replyContent.trim();
+    if (!currentText && !selectedMedia) return;
 
     if (topicDetail?.status === 'CLOSED') {
       alert('Cannot reply to a closed discussion topic.');
@@ -152,10 +380,28 @@ export const DiscussionWidget: React.FC = () => {
 
     setSubmittingReply(true);
     try {
+      let attachmentId: string | undefined = undefined;
+
+      // Upload image or voice media if present
+      if (selectedMedia?.file) {
+        const uploaded = await kmsApi.discussions.uploadMedia(
+          selectedTopicId,
+          selectedMedia.file,
+          undefined,
+          selectedMedia.mediaType,
+          selectedMedia.durationSeconds,
+          selectedMedia.filename
+        );
+        attachmentId = uploaded.id;
+      }
+
       await kmsApi.discussions.addReply(selectedTopicId, {
-        content: replyContent.trim(),
-      });
+        content: currentText,
+        attachmentIds: attachmentId ? [attachmentId] : undefined,
+      } as any);
+
       setReplyContent('');
+      clearSelectedMedia();
       // Reload topic detail to display the new reply
       await loadTopicDetail(selectedTopicId);
     } catch (err: any) {
@@ -275,7 +521,7 @@ export const DiscussionWidget: React.FC = () => {
                   {/* Messages / Replies Scroll Container */}
                   <div className="flex-1 overflow-y-auto p-3 space-y-3">
                     {/* Original Topic Post Card */}
-                    <div className="bg-white border border-blue-100/80 rounded-xl p-3 shadow-2xs space-y-1.5">
+                    <div className="bg-white border border-blue-100/80 rounded-xl p-3 shadow-2xs space-y-2">
                       <div className="flex items-center justify-between text-[10px] text-slate-400">
                         <span className="font-bold text-blue-700">{topicDetail.author || 'Author'}</span>
                         <span>{formatTimeAgo(topicDetail.createdAt)}</span>
@@ -287,6 +533,46 @@ export const DiscussionWidget: React.FC = () => {
                         <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">
                           {topicDetail.description}
                         </p>
+                      )}
+
+                      {/* Topic Attached Images */}
+                      {topicDetail.attachments && topicDetail.attachments.filter((a) => a.mediaType === 'IMAGE').length > 0 && (
+                        <div className="my-1.5 space-y-1.5">
+                          {topicDetail.attachments.filter((a) => a.mediaType === 'IMAGE').map((img) => (
+                            <div key={img.id} className="relative inline-block max-w-full">
+                              <div
+                                onClick={() => setLightboxImage({ src: getAuthenticatedMediaUrl(img.viewUrl), filename: img.originalFilename })}
+                                className="cursor-pointer group/img relative inline-block max-w-full rounded-xl overflow-hidden border border-slate-200 shadow-2xs hover:shadow-xs transition-all"
+                              >
+                                <AuthenticatedImage
+                                  src={img.viewUrl}
+                                  alt={img.originalFilename}
+                                  imgClassName="max-h-44 w-auto object-cover rounded-xl transition-transform duration-200 group-hover/img:scale-[1.02]"
+                                />
+                                <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/25 transition-colors flex items-end p-1.5 opacity-0 group-hover/img:opacity-100 pointer-events-none">
+                                  <span className="text-[9px] text-white bg-black/75 px-1.5 py-0.5 rounded truncate max-w-full font-medium">
+                                    {img.originalFilename}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Topic Attached Voice Notes */}
+                      {topicDetail.attachments && topicDetail.attachments.filter((a) => a.mediaType === 'AUDIO').length > 0 && (
+                        <div className="my-1.5 space-y-1.5">
+                          {topicDetail.attachments.filter((a) => a.mediaType === 'AUDIO').map((audio) => (
+                            <VoicePlayer
+                              key={audio.id}
+                              src={getAuthenticatedMediaUrl(audio.viewUrl)}
+                              durationSeconds={audio.durationSeconds}
+                              filename={audio.originalFilename}
+                              isOutgoing={false}
+                            />
+                          ))}
+                        </div>
                       )}
                     </div>
 
@@ -309,6 +595,8 @@ export const DiscussionWidget: React.FC = () => {
                     ) : (
                       topicDetail.replies.map((reply) => {
                         const isMe = reply.author && (reply.author === currentUsername || reply.author === user?.fullName);
+                        const imageAttachments = reply.attachments?.filter((a) => a.mediaType === 'IMAGE') || [];
+                        const audioAttachments = reply.attachments?.filter((a) => a.mediaType === 'AUDIO') || [];
 
                         return (
                           <div
@@ -324,13 +612,56 @@ export const DiscussionWidget: React.FC = () => {
                             </div>
 
                             <div
-                              className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed shadow-2xs ${
+                              className={`max-w-[88%] rounded-2xl px-3 py-2 text-xs leading-relaxed shadow-2xs space-y-1.5 ${
                                 isMe
                                   ? 'bg-blue-600 text-white rounded-br-xs'
                                   : 'bg-white border border-slate-200 text-slate-800 rounded-bl-xs'
                               }`}
                             >
-                              <p className="whitespace-pre-wrap break-words">{reply.content}</p>
+                              {/* Reply Image Attachments */}
+                              {imageAttachments.length > 0 && (
+                                <div className="space-y-1">
+                                  {imageAttachments.map((img) => (
+                                    <div key={img.id} className="relative inline-block max-w-full">
+                                      <div
+                                        onClick={() => setLightboxImage({ src: getAuthenticatedMediaUrl(img.viewUrl), filename: img.originalFilename })}
+                                        className="cursor-pointer group/img relative inline-block max-w-full rounded-xl overflow-hidden border border-slate-200/80 shadow-2xs hover:shadow-xs transition-all"
+                                      >
+                                        <AuthenticatedImage
+                                          src={img.viewUrl}
+                                          alt={img.originalFilename}
+                                          imgClassName="max-h-40 w-auto object-cover rounded-xl transition-transform duration-200 group-hover/img:scale-[1.02]"
+                                        />
+                                        <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/25 transition-colors flex items-end p-1.5 opacity-0 group-hover/img:opacity-100 pointer-events-none">
+                                          <span className="text-[9px] text-white bg-black/75 px-1.5 py-0.5 rounded truncate max-w-full font-medium">
+                                            {img.originalFilename}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Reply Voice Note Attachments */}
+                              {audioAttachments.length > 0 && (
+                                <div className="space-y-1">
+                                  {audioAttachments.map((audio) => (
+                                    <VoicePlayer
+                                      key={audio.id}
+                                      src={getAuthenticatedMediaUrl(audio.viewUrl)}
+                                      durationSeconds={audio.durationSeconds}
+                                      filename={audio.originalFilename}
+                                      isOutgoing={Boolean(isMe)}
+                                    />
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Reply Text Body */}
+                              {reply.content && (
+                                <p className="whitespace-pre-wrap break-words">{reply.content}</p>
+                              )}
                             </div>
                           </div>
                         );
@@ -339,26 +670,128 @@ export const DiscussionWidget: React.FC = () => {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  {/* Reply Composer Input */}
-                  <div className="p-2.5 bg-white border-t border-slate-200 shrink-0">
+                  {/* Reply Composer Input & Media Actions */}
+                  <div className="p-2.5 bg-white border-t border-slate-200 shrink-0 space-y-2">
+                    {/* Media Preview Chip if attached */}
+                    {selectedMedia && (
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          {selectedMedia.mediaType === 'IMAGE' ? (
+                            <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-300 shrink-0">
+                              <img
+                                src={selectedMedia.previewUrl}
+                                alt="Selected preview"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg shrink-0">
+                              <Mic className="w-4 h-4" />
+                            </div>
+                          )}
+                          <div className="truncate min-w-0 text-[11px]">
+                            <p className="font-semibold text-slate-800 truncate">{selectedMedia.filename}</p>
+                            <p className="text-slate-400 text-[10px]">
+                              {selectedMedia.mediaType === 'AUDIO' && selectedMedia.durationSeconds !== undefined
+                                ? `Voice Note (${formatTimer(selectedMedia.durationSeconds)})`
+                                : `${(selectedMedia.sizeBytes / 1024).toFixed(0)} KB`}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={clearSelectedMedia}
+                          className="p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+                          title="Remove attachment"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+
                     {topicDetail.status === 'CLOSED' ? (
                       <div className="p-2 rounded-lg bg-slate-100 text-slate-500 text-center text-[11px] font-medium flex items-center justify-center gap-1.5">
                         <Lock className="w-3.5 h-3.5 text-slate-400" />
                         <span>This discussion thread is closed.</span>
                       </div>
+                    ) : isRecording ? (
+                      /* Live Voice Recording UI */
+                      <div className="flex items-center justify-between p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 animate-pulse">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping" />
+                          <span className="text-xs font-bold text-rose-700">Recording Voice Note</span>
+                          <span className="text-xs font-mono font-bold text-rose-900 ml-1">
+                            {formatTimer(recordingSeconds)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={cancelRecording}
+                            className="p-1.5 text-rose-600 hover:bg-rose-100 rounded-lg transition-colors text-[11px] font-semibold"
+                            title="Cancel recording"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={stopRecording}
+                            className="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors flex items-center gap-1 text-[11px] font-bold shadow-xs"
+                            title="Done recording"
+                          >
+                            <Square className="w-3 h-3 fill-current" />
+                            <span>Done</span>
+                          </button>
+                        </div>
+                      </div>
                     ) : (
+                      /* Standard Input & Attachment Form */
                       <form onSubmit={handleSendReply} className="flex items-center gap-1.5">
+                        {/* Hidden Image File Picker */}
+                        <input
+                          ref={imageInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={handleImageSelect}
+                        />
+
+                        {/* Image Button */}
+                        <button
+                          type="button"
+                          onClick={() => imageInputRef.current?.click()}
+                          disabled={submittingReply}
+                          className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-xl transition-colors shrink-0"
+                          title="Attach image (JPG, PNG, WEBP)"
+                        >
+                          <ImageIcon className="w-4 h-4" />
+                        </button>
+
+                        {/* Voice Note Button */}
+                        <button
+                          type="button"
+                          onClick={startRecording}
+                          disabled={submittingReply}
+                          className="p-2 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-xl transition-colors shrink-0"
+                          title="Record voice note"
+                        >
+                          <Mic className="w-4 h-4" />
+                        </button>
+
+                        {/* Text Field */}
                         <input
                           type="text"
-                          placeholder="Reply to this topic..."
+                          placeholder={selectedMedia ? 'Add a caption (optional)...' : 'Reply to this topic...'}
                           value={replyContent}
                           onChange={(e) => setReplyContent(e.target.value)}
                           disabled={submittingReply}
                           className="flex-1 px-3 py-1.5 text-xs bg-slate-50 hover:bg-slate-100/70 focus:bg-white text-slate-800 placeholder-slate-400 rounded-xl border border-slate-200 focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100 transition-all"
                         />
+
+                        {/* Submit Button */}
                         <button
                           type="submit"
-                          disabled={!replyContent.trim() || submittingReply}
+                          disabled={(!replyContent.trim() && !selectedMedia) || submittingReply}
                           className="p-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl shadow-xs transition-colors shrink-0"
                           title="Send Reply"
                         >
@@ -462,6 +895,16 @@ export const DiscussionWidget: React.FC = () => {
           </div>
           <span className="text-xs tracking-tight">Discussions</span>
         </button>
+      )}
+
+      {/* Lightbox Modal for Full-Resolution Image Viewing & Zoom */}
+      {lightboxImage && (
+        <ImageViewerModal
+          isOpen={Boolean(lightboxImage)}
+          src={lightboxImage.src}
+          filename={lightboxImage.filename}
+          onClose={() => setLightboxImage(null)}
+        />
       )}
     </div>
   );
