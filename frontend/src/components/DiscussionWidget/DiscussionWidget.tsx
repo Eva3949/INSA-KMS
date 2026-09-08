@@ -18,7 +18,9 @@ import {
   Image as ImageIcon,
   Mic,
   Square,
-  Trash2
+  Trash2,
+  Building2,
+  Globe
 } from 'lucide-react';
 import { kmsApi, getAuthenticatedMediaUrl } from '@/src/lib/api';
 import { useAuth } from '@/src/lib/auth-context';
@@ -50,6 +52,9 @@ interface TopicItem {
   author?: string;
   replyCount?: number;
   status?: string;
+  visibility?: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | string;
+  allowedDepartmentNames?: string[];
+  participantIds?: string[];
   createdAt?: string;
   attachments?: ChatAttachment[];
 }
@@ -839,9 +844,27 @@ export const DiscussionWidget: React.FC = () => {
                       onClick={() => handleSelectTopic(topic.id)}
                       className="pt-2 first:pt-0 pb-2 cursor-pointer group hover:bg-white p-2 rounded-xl transition-all border border-transparent hover:border-blue-200 hover:shadow-2xs"
                     >
-                      <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-700 transition-colors line-clamp-1">
-                        {topic.title}
-                      </h4>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {topic.visibility === 'INTERNAL' ? (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.2 rounded">
+                            <Building2 className="w-2.5 h-2.5 text-indigo-600" />
+                            <span>Internal</span>
+                          </span>
+                        ) : topic.visibility === 'CONFIDENTIAL' ? (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded">
+                            <Lock className="w-2.5 h-2.5 text-amber-700" />
+                            <span>Confidential</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded">
+                            <Globe className="w-2.5 h-2.5 text-blue-600" />
+                            <span>Public</span>
+                          </span>
+                        )}
+                        <h4 className="text-xs font-bold text-slate-900 group-hover:text-blue-700 transition-colors line-clamp-1 flex-1">
+                          {topic.title}
+                        </h4>
+                      </div>
                       {topic.description && (
                         <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5 leading-snug">
                           {topic.description}

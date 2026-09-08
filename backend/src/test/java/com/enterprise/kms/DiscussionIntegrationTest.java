@@ -135,7 +135,7 @@ class DiscussionIntegrationTest {
         topic.setStatus("OPEN");
 
         Page<DiscussionTopic> page = new PageImpl<>(List.of(topic));
-        when(topicRepository.searchTopics(eq("PostgreSQL"), eq("OPEN"), any(PageRequest.class)))
+        when(topicRepository.searchAuthorizedTopics(any(), any(), any(), any(), any(), anyBoolean(), any(PageRequest.class)))
                 .thenReturn(page);
 
         ResponseEntity<Page<Map<String, Object>>> res = discussionController.getTopics("PostgreSQL", "OPEN", PageRequest.of(0, 10));

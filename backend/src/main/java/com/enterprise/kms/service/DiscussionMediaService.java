@@ -5,10 +5,12 @@ import com.enterprise.kms.entity.DiscussionAttachment;
 import com.enterprise.kms.entity.DiscussionReply;
 import com.enterprise.kms.entity.DiscussionTopic;
 import com.enterprise.kms.entity.StorageObject;
+import com.enterprise.kms.entity.User;
 import com.enterprise.kms.repository.DiscussionAttachmentRepository;
 import com.enterprise.kms.repository.DiscussionReplyRepository;
 import com.enterprise.kms.repository.DiscussionTopicRepository;
 import com.enterprise.kms.repository.StorageObjectRepository;
+import com.enterprise.kms.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.InputStreamResource;
@@ -55,6 +57,7 @@ public class DiscussionMediaService {
     private final StorageObjectRepository storageObjectRepository;
     private final StorageService storageService;
     private final AuditService auditService;
+    private final UserRepository userRepository;
 
     public DiscussionMediaService(DiscussionTopicRepository topicRepository,
                                   DiscussionReplyRepository replyRepository,
@@ -62,12 +65,58 @@ public class DiscussionMediaService {
                                   StorageObjectRepository storageObjectRepository,
                                   StorageService storageService,
                                   AuditService auditService) {
+        this(topicRepository, replyRepository, attachmentRepository, storageObjectRepository, storageService, auditService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DiscussionMediaService(DiscussionTopicRepository topicRepository,
+                                  DiscussionReplyRepository replyRepository,
+                                  DiscussionAttachmentRepository attachmentRepository,
+                                  StorageObjectRepository storageObjectRepository,
+                                  StorageService storageService,
+                                  AuditService auditService,
+                                  UserRepository userRepository) {
         this.topicRepository = topicRepository;
         this.replyRepository = replyRepository;
         this.attachmentRepository = attachmentRepository;
         this.storageObjectRepository = storageObjectRepository;
         this.storageService = storageService;
         this.auditService = auditService;
+        this.userRepository = userRepository;
+    }
+
+    public boolean isUserAuthorizedForDiscussion(DiscussionTopic topic, String username, boolean isAdmin) {
+        if (topic == null || username == null || username.isBlank()) return false;
+        if (isAdmin) return true;
+        if (topic.getAuthorUsername() != null && topic.getAuthorUsername().equalsIgnoreCase(username)) return true;
+
+        String visibility = topic.getVisibility() != null ? topic.getVisibility().toUpperCase().trim() : "PUBLIC";
+        if ("PUBLIC".equals(visibility)) return true;
+
+        User currentUser = userRepository.findByUsername(username)
+                .or(() -> userRepository.findByKeycloakSub("sub-" + username))
+                .orElse(null);
+        if (currentUser == null) return false;
+
+        if ("INTERNAL".equals(visibility)) {
+            if (currentUser.getDepartment() == null || topic.getAllowedDepartments() == null) return false;
+            UUID userDeptId = currentUser.getDepartment().getId();
+            return topic.getAllowedDepartments().stream().anyMatch(d -> d.getId().equals(userDeptId));
+        }
+
+        if ("CONFIDENTIAL".equals(visibility)) {
+            if (topic.getParticipants() == null) return false;
+            return topic.getParticipants().stream().anyMatch(p -> p.getId().equals(currentUser.getId()) ||
+                    (p.getUsername() != null && p.getUsername().equalsIgnoreCase(username)));
+        }
+
+        return false;
+    }
+
+    public void validateDiscussionAccess(DiscussionTopic topic, String username, boolean isAdmin) {
+        if (!isUserAuthorizedForDiscussion(topic, username, isAdmin)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: You are not authorized to access attachments in this discussion");
+        }
     }
 
     @Transactional
@@ -76,13 +125,16 @@ public class DiscussionMediaService {
                                               MultipartFile file,
                                               String mediaTypeHint,
                                               Integer durationSeconds,
-                                              String username) {
+                                              String username,
+                                              boolean isAdmin) {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File payload cannot be empty");
         }
 
         DiscussionTopic topic = topicRepository.findById(discussionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found"));
+
+        validateDiscussionAccess(topic, username, isAdmin);
 
         if ("CLOSED".equalsIgnoreCase(topic.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot upload media to a closed discussion topic");
@@ -192,15 +244,40 @@ public class DiscussionMediaService {
         return toDTO(saved);
     }
 
+    @Transactional
+    public DiscussionAttachmentDTO uploadMedia(UUID discussionId,
+                                              UUID replyId,
+                                              MultipartFile file,
+                                              String mediaTypeHint,
+                                              Integer durationSeconds,
+                                              String username) {
+        return uploadMedia(discussionId, replyId, file, mediaTypeHint, durationSeconds, username, false);
+    }
+
     @Transactional(readOnly = true)
-    public DiscussionAttachmentDTO getMediaMetadata(UUID discussionId, UUID mediaId) {
+    public DiscussionAttachmentDTO getMediaMetadata(UUID discussionId, UUID mediaId, String username, boolean isAdmin) {
+        DiscussionTopic topic = topicRepository.findById(discussionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found"));
+
+        validateDiscussionAccess(topic, username, isAdmin);
+
         DiscussionAttachment att = attachmentRepository.findByIdAndDiscussionId(mediaId, discussionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion media attachment not found"));
         return toDTO(att);
     }
 
     @Transactional(readOnly = true)
-    public ResponseEntity<Resource> streamMediaContent(UUID discussionId, UUID mediaId, String username) {
+    public DiscussionAttachmentDTO getMediaMetadata(UUID discussionId, UUID mediaId) {
+        return getMediaMetadata(discussionId, mediaId, null, false);
+    }
+
+    @Transactional(readOnly = true)
+    public ResponseEntity<Resource> streamMediaContent(UUID discussionId, UUID mediaId, String username, boolean isAdmin) {
+        DiscussionTopic topic = topicRepository.findById(discussionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found"));
+
+        validateDiscussionAccess(topic, username, isAdmin);
+
         DiscussionAttachment att = attachmentRepository.findByIdAndDiscussionId(mediaId, discussionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion media attachment not found"));
 
@@ -236,6 +313,11 @@ public class DiscussionMediaService {
             log.error("Failed to stream discussion media {}: {}", mediaId, e.getMessage());
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to stream media binary");
         }
+    }
+
+    @Transactional(readOnly = true)
+    public ResponseEntity<Resource> streamMediaContent(UUID discussionId, UUID mediaId, String username) {
+        return streamMediaContent(discussionId, mediaId, username, false);
     }
 
     private Path resolvePhysicalPath(DiscussionAttachment att) {

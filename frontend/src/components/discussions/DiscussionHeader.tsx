@@ -13,7 +13,10 @@ import {
   Calendar,
   CheckCircle2,
   Video,
-  Radio
+  Radio,
+  Globe,
+  Building2,
+  ShieldCheck
 } from 'lucide-react';
 
 interface DiscussionHeaderProps {
@@ -21,6 +24,10 @@ interface DiscussionHeaderProps {
     id: string;
     title: string;
     status: 'OPEN' | 'CLOSED' | string;
+    visibility?: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | string;
+    allowedDepartmentNames?: string[];
+    participantIds?: string[];
+    participants?: Array<{ id: string; username: string; fullName: string }>;
     author: string;
     createdAt: string;
     description?: string;
@@ -135,6 +142,25 @@ export const DiscussionHeader: React.FC<DiscussionHeaderProps> = ({
                 label={topic.status}
                 variant={isClosed ? 'slate' : 'green'}
               />
+
+              {/* Visibility Badge */}
+              {topic.visibility === 'INTERNAL' ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-md">
+                  <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Internal{topic.allowedDepartmentNames?.length ? `: ${topic.allowedDepartmentNames.join(', ')}` : ''}</span>
+                </span>
+              ) : topic.visibility === 'CONFIDENTIAL' ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-md">
+                  <Lock className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Confidential{topic.participantIds?.length ? ` (${topic.participantIds.length} participants)` : ''}</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-md">
+                  <Globe className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Public</span>
+                </span>
+              )}
+
               <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">
                 {topic.title}
               </h1>

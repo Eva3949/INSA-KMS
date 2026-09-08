@@ -31,7 +31,7 @@
 17. [Monitoring, Health Checks & Production Logging](#17-monitoring-health-checks--production-logging)
 18. [Routine Maintenance & Operational Procedures](#18-routine-maintenance--operational-procedures)
 19. [Comprehensive Troubleshooting Guide](#19-comprehensive-troubleshooting-guide)
-20. [Production Security Hardening Checklist](#20-production-security-hardening-checklist)
+20. [Production Security Hardening Checklist] (#20-production-security-hardening-checklist)
 21. [Rollback & Emergency Recovery Procedures](#21-rollback--emergency-recovery-procedures)
 22. [Production Go-Live Sign-Off Checklist](#22-production-go-live-sign-off-checklist)
 

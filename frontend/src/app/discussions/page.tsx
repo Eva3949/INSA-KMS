@@ -8,7 +8,7 @@ import { Breadcrumb } from '@/src/components/ui/Breadcrumb';
 import { Button } from '@/src/components/ui/Button';
 import { Badge } from '@/src/components/ui/Badge';
 import { LoadingState, ErrorState } from '@/src/components/ui/States';
-import { MessageSquare, Plus, Search, Filter, Calendar, User, MessageCircle, Lock, CheckCircle2 } from 'lucide-react';
+import { MessageSquare, Plus, Search, Filter, Calendar, User, MessageCircle, Lock, CheckCircle2, Globe, Building2 } from 'lucide-react';
 import { kmsApi } from '@/src/lib/api';
 
 export default function DiscussionsListPage() {
@@ -116,8 +116,27 @@ export default function DiscussionsListPage() {
               <Link key={topic.id} href={`/discussions/${topic.id}`}>
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs hover:shadow-md hover:border-blue-300 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 group">
                   <div className="space-y-1.5 min-w-0 flex-1">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Badge label={topic.status} variant={topic.status === 'OPEN' ? 'green' : 'slate'} />
+                      
+                      {/* Visibility Badge */}
+                      {topic.visibility === 'INTERNAL' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                          <Building2 className="w-3 h-3 text-indigo-600" />
+                          <span>Internal{topic.allowedDepartmentNames?.length ? `: ${topic.allowedDepartmentNames.slice(0, 2).join(', ')}${topic.allowedDepartmentNames.length > 2 ? '...' : ''}` : ''}</span>
+                        </span>
+                      ) : topic.visibility === 'CONFIDENTIAL' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                          <Lock className="w-3 h-3 text-amber-700" />
+                          <span>Confidential{topic.participantIds?.length ? ` (${topic.participantIds.length})` : ''}</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                          <Globe className="w-3 h-3 text-blue-600" />
+                          <span>Public</span>
+                        </span>
+                      )}
+
                       <span className="text-[11px] font-semibold text-slate-400">
                         {new Date(topic.createdAt).toLocaleDateString()}
                       </span>

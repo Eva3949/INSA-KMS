@@ -927,9 +927,17 @@ export const kmsApi = {
       return fetchApi<any>(`/discussions?${params.toString()}`);
     },
     getTopicDetail: (id: string) => fetchApi<any>(`/discussions/${id}`),
-    createTopic: (data: { title: string; description: string }) =>
-      fetchApi<any>('/discussions', { method: 'POST', body: JSON.stringify(data) }),
-    addReply: (topicId: string, data: { content: string; parentReplyId?: string }) =>
+    createTopic: (data: {
+      title: string;
+      description: string;
+      visibility?: 'PUBLIC' | 'INTERNAL' | 'CONFIDENTIAL' | string;
+      departmentIds?: string[];
+      participantIds?: string[];
+    }) => fetchApi<any>('/discussions', { method: 'POST', body: JSON.stringify(data) }),
+    getAvailableUsers: (q?: string) =>
+      fetchApi<any[]>(q ? `/discussions/available-users?q=${encodeURIComponent(q)}` : '/discussions/available-users'),
+    getActiveDepartments: () => fetchApi<any[]>('/departments/active'),
+    addReply: (topicId: string, data: { content: string; parentReplyId?: string; attachmentIds?: string[] }) =>
       fetchApi<any>(`/discussions/${topicId}/replies`, { method: 'POST', body: JSON.stringify(data) }),
     setStatus: (topicId: string, status: 'OPEN' | 'CLOSED') =>
       fetchApi<any>(`/discussions/${topicId}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),

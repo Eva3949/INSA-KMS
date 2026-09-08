@@ -12,6 +12,27 @@ import java.util.UUID;
 
 @Repository
 public interface DiscussionTopicRepository extends JpaRepository<DiscussionTopic, UUID> {
+    @Query("SELECT DISTINCT t FROM DiscussionTopic t " +
+           "LEFT JOIN t.allowedDepartments dept " +
+           "LEFT JOIN t.participants part " +
+           "WHERE " +
+           "(:status IS NULL OR LOWER(t.status) = LOWER(CAST(:status AS string))) AND " +
+           "(:search IS NULL OR LOWER(t.title) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) OR LOWER(t.description) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))) AND " +
+           "(:isAdmin = true OR " +
+           " t.visibility = 'PUBLIC' OR " +
+           " (t.authorUsername IS NOT NULL AND LOWER(t.authorUsername) = LOWER(CAST(:username AS string))) OR " +
+           " (t.visibility = 'INTERNAL' AND :departmentId IS NOT NULL AND dept.id = :departmentId) OR " +
+           " (t.visibility = 'CONFIDENTIAL' AND :userId IS NOT NULL AND part.id = :userId)) " +
+           "ORDER BY t.updatedAt DESC, t.createdAt DESC")
+    Page<DiscussionTopic> searchAuthorizedTopics(
+            @Param("search") String search,
+            @Param("status") String status,
+            @Param("username") String username,
+            @Param("userId") UUID userId,
+            @Param("departmentId") UUID departmentId,
+            @Param("isAdmin") boolean isAdmin,
+            Pageable pageable);
+
     @Query("SELECT t FROM DiscussionTopic t WHERE " +
            "(:status IS NULL OR LOWER(t.status) = LOWER(CAST(:status AS string))) AND " +
            "(:search IS NULL OR LOWER(t.title) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) OR LOWER(t.description) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))) " +

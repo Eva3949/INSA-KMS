@@ -49,10 +49,40 @@ public class VideoSessionService {
         this.jitsiTokenService = jitsiTokenService;
     }
 
+    public boolean isUserAuthorizedForDiscussion(DiscussionTopic topic, String username, boolean isAdmin) {
+        if (topic == null || username == null || username.isBlank()) return false;
+        if (isAdmin) return true;
+        if (topic.getAuthorUsername() != null && topic.getAuthorUsername().equalsIgnoreCase(username)) return true;
+
+        String visibility = topic.getVisibility() != null ? topic.getVisibility().toUpperCase().trim() : "PUBLIC";
+        if ("PUBLIC".equals(visibility)) return true;
+
+        User currentUser = resolveUser(username);
+        if (currentUser == null) return false;
+
+        if ("INTERNAL".equals(visibility)) {
+            if (currentUser.getDepartment() == null || topic.getAllowedDepartments() == null) return false;
+            UUID userDeptId = currentUser.getDepartment().getId();
+            return topic.getAllowedDepartments().stream().anyMatch(d -> d.getId().equals(userDeptId));
+        }
+
+        if ("CONFIDENTIAL".equals(visibility)) {
+            if (topic.getParticipants() == null) return false;
+            return topic.getParticipants().stream().anyMatch(p -> p.getId().equals(currentUser.getId()) ||
+                    (p.getUsername() != null && p.getUsername().equalsIgnoreCase(username)));
+        }
+
+        return false;
+    }
+
     @Transactional
     public VideoSessionResponse createSession(UUID discussionId, CreateVideoSessionRequest req, String username, boolean isAdmin) {
         DiscussionTopic discussion = discussionRepository.findById(discussionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found"));
+
+        if (!isUserAuthorizedForDiscussion(discussion, username, isAdmin)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: You are not authorized for this discussion");
+        }
 
         if (req.getTitle() == null || req.getTitle().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Session title is required");
@@ -206,6 +236,9 @@ public class VideoSessionService {
         if (isAdmin) {
             return true;
         }
+        if (session.getDiscussion() != null && !isUserAuthorizedForDiscussion(session.getDiscussion(), username, isAdmin)) {
+            return false;
+        }
         if (session.getHostUsername() != null && session.getHostUsername().equalsIgnoreCase(username)) {
             return true;
         }
@@ -218,8 +251,11 @@ public class VideoSessionService {
 
     @Transactional(readOnly = true)
     public List<VideoSessionResponse> listSessionsForDiscussion(UUID discussionId, String username, boolean isAdmin) {
-        if (!discussionRepository.existsById(discussionId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found");
+        DiscussionTopic discussion = discussionRepository.findById(discussionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Discussion topic not found"));
+
+        if (!isUserAuthorizedForDiscussion(discussion, username, isAdmin)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied: You are not authorized for this discussion");
         }
 
         List<VideoSession> sessions = videoSessionRepository.findByDiscussionIdOrderByScheduledStartDescCreatedAtDesc(discussionId);

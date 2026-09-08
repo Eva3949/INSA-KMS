@@ -4,6 +4,9 @@ import com.enterprise.kms.annotation.AuditLog;
 import com.enterprise.kms.dto.DiscussionAttachmentDTO;
 import com.enterprise.kms.entity.DiscussionReply;
 import com.enterprise.kms.entity.DiscussionTopic;
+import com.enterprise.kms.entity.User;
+import com.enterprise.kms.repository.DepartmentRepository;
+import com.enterprise.kms.repository.UserRepository;
 import com.enterprise.kms.security.SecurityUtils;
 import com.enterprise.kms.service.DiscussionMediaService;
 import com.enterprise.kms.service.DiscussionService;
@@ -16,23 +19,29 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/v1/discussions")
 public class DiscussionController {
     private final DiscussionService discussionService;
     private final DiscussionMediaService mediaService;
+    private final UserRepository userRepository;
+    private final DepartmentRepository departmentRepository;
 
     public DiscussionController(DiscussionService discussionService) {
-        this(discussionService, null);
+        this(discussionService, null, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    public DiscussionController(DiscussionService discussionService, DiscussionMediaService mediaService) {
+    public DiscussionController(DiscussionService discussionService,
+                                DiscussionMediaService mediaService,
+                                UserRepository userRepository,
+                                DepartmentRepository departmentRepository) {
         this.discussionService = discussionService;
         this.mediaService = mediaService;
+        this.userRepository = userRepository;
+        this.departmentRepository = departmentRepository;
     }
 
     @GetMapping
@@ -41,7 +50,9 @@ public class DiscussionController {
             @RequestParam(name = "search", required = false) String search,
             @RequestParam(name = "status", required = false) String status,
             Pageable pageable) {
-        return ResponseEntity.ok(discussionService.searchTopics(search, status, pageable));
+        String username = SecurityUtils.getCurrentUsername();
+        boolean isAdmin = SecurityUtils.isSystemAdmin();
+        return ResponseEntity.ok(discussionService.searchTopics(search, status, username, isAdmin, pageable));
     }
 
     @PostMapping
@@ -58,7 +69,8 @@ public class DiscussionController {
     @AuditLog(action = "DISCUSSION_TOPIC_VIEW", resourceType = "DISCUSSION")
     public ResponseEntity<Map<String, Object>> getTopicDetail(@PathVariable UUID id) {
         String username = SecurityUtils.getCurrentUsername();
-        return ResponseEntity.ok(discussionService.getTopicDetail(id, username));
+        boolean isAdmin = SecurityUtils.isSystemAdmin();
+        return ResponseEntity.ok(discussionService.getTopicDetail(id, username, isAdmin));
     }
 
     @PostMapping("/{id}/replies")
@@ -66,7 +78,8 @@ public class DiscussionController {
     @AuditLog(action = "DISCUSSION_REPLY_ADD", resourceType = "DISCUSSION")
     public ResponseEntity<Map<String, Object>> addReply(@PathVariable UUID id, @RequestBody Map<String, Object> body) {
         String username = SecurityUtils.getCurrentUsername();
-        DiscussionReply reply = discussionService.addReply(id, body, username);
+        boolean isAdmin = SecurityUtils.isSystemAdmin();
+        DiscussionReply reply = discussionService.addReply(id, body, username, isAdmin);
         return ResponseEntity.ok(discussionService.toReplyResponse(reply));
     }
 
@@ -112,7 +125,8 @@ public class DiscussionController {
             @RequestParam(value = "mediaType", required = false) String mediaType,
             @RequestParam(value = "durationSeconds", required = false) Integer durationSeconds) {
         String username = SecurityUtils.getCurrentUsername();
-        DiscussionAttachmentDTO dto = mediaService.uploadMedia(id, replyId, file, mediaType, durationSeconds, username);
+        boolean isAdmin = SecurityUtils.isSystemAdmin();
+        DiscussionAttachmentDTO dto = mediaService.uploadMedia(id, replyId, file, mediaType, durationSeconds, username, isAdmin);
         return ResponseEntity.ok(dto);
     }
 
@@ -121,7 +135,9 @@ public class DiscussionController {
     public ResponseEntity<DiscussionAttachmentDTO> getMediaMetadata(
             @PathVariable UUID id,
             @PathVariable UUID mediaId) {
-        DiscussionAttachmentDTO dto = mediaService.getMediaMetadata(id, mediaId);
+        String username = SecurityUtils.getCurrentUsername();
+        boolean isAdmin = SecurityUtils.isSystemAdmin();
+        DiscussionAttachmentDTO dto = mediaService.getMediaMetadata(id, mediaId, username, isAdmin);
         return ResponseEntity.ok(dto);
     }
 
@@ -131,7 +147,8 @@ public class DiscussionController {
             @PathVariable UUID id,
             @PathVariable UUID mediaId) {
         String username = SecurityUtils.getCurrentUsername();
-        return mediaService.streamMediaContent(id, mediaId, username);
+        boolean isAdmin = SecurityUtils.isSystemAdmin();
+        return mediaService.streamMediaContent(id, mediaId, username, isAdmin);
     }
 
     @DeleteMapping("/{id}/media/{mediaId}")
@@ -143,5 +160,37 @@ public class DiscussionController {
         boolean isAdmin = SecurityUtils.isSystemAdmin();
         mediaService.deleteMedia(id, mediaId, username, isAdmin);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/available-users")
+    @PreAuthorize("hasAnyRole('ROLE_VIEWER', 'ROLE_CONTRIBUTOR', 'ROLE_CONTENT_OWNER', 'ROLE_COMPLIANCE_OFFICER', 'ROLE_IT_SECURITY', 'ROLE_ADMIN')")
+    public ResponseEntity<List<Map<String, Object>>> getAvailableUsers(
+            @RequestParam(name = "q", required = false) String query) {
+        if (userRepository == null) return ResponseEntity.ok(Collections.emptyList());
+        List<User> users;
+        if (query != null && !query.isBlank()) {
+            String q = query.trim();
+            users = userRepository.findByUsernameContainingIgnoreCaseOrEmailContainingIgnoreCaseOrFullNameContainingIgnoreCase(q, q, q);
+        } else {
+            users = userRepository.findAll();
+        }
+
+        List<Map<String, Object>> result = users.stream()
+                .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
+                .map(u -> {
+                    Map<String, Object> map = new LinkedHashMap<>();
+                    map.put("id", u.getId());
+                    map.put("username", u.getUsername());
+                    map.put("fullName", (u.getFullName() != null && !u.getFullName().isBlank()) ? u.getFullName() : u.getUsername());
+                    map.put("email", u.getEmail());
+                    map.put("department", u.getDepartment() != null ? u.getDepartment().getName() : null);
+                    map.put("departmentId", u.getDepartment() != null ? u.getDepartment().getId() : null);
+                    map.put("jobTitle", u.getJobTitle());
+                    return map;
+                })
+                .limit(30)
+                .toList();
+
+        return ResponseEntity.ok(result);
     }
 }
