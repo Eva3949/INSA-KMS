@@ -256,19 +256,18 @@ ANNEXES (Separate from Main Report Page Count) ............................... 3
 
 | Table Number | Table Caption | Page |
 |---|---|---|
-| **Table 1.1** | Expected Internship Deliverables and Verification Artifacts | 3 |
-| **Table 2.1** | Weekly Supervisory Mentorship and Review Cadence | 9 |
-| **Table 3.1** | Technology Stack Matrix for INSA-KMS | 13 |
-| **Table 3.2** | Keycloak Enterprise Realm Roles and Authorization Permissions | 21 |
-| **Table 3.3** | Document Security Classification Matrix (ABAC Clearance) | 22 |
-| **Table 3.4** | Summary of 20 Automated Unit and Integration Tests | 28 |
-| **Table 3.5** | End-to-End Live Runtime Integration Test Results (10 Scenarios) | 29 |
-| **Table 3.6** | Mapping of ASTU Academic Courses to Industrial Project Tasks | 32 |
-| **Table A.1** | Month 1 Internship Activity Log (Weeks 1 – 4, Days 1 – 20) | 54 |
-| **Table A.2** | Month 2 Internship Activity Log (Weeks 5 – 9, Days 21 – 45) | 60 |
-| **Table B.1** | ASTU Student Internship Self-Evaluation Scoring Rubric | 66 |
-| **Table C.1** | Core Database Entities and Relational Schema Definition | 71 |
-| **Table C.2** | RESTful API Endpoints Catalog for INSA-KMS | 74 |
+| **Table 2.1** | Weekly Supervisory Mentorship and Review Cadence | 6 |
+| **Table 3.1** | Technology Stack Matrix for INSA-KMS | 10 |
+| **Table 3.2** | Keycloak Enterprise Realm Roles and Authorization Permissions | 16 |
+| **Table 3.3** | Document Security Classification Matrix (ABAC Clearance) | 17 |
+| **Table 3.4** | Summary of 20 Automated Unit and Integration Tests | 20 |
+| **Table 3.5** | End-to-End Live Runtime Integration Test Results (10 Scenarios) | 21 |
+| **Table 3.6** | Mapping of ASTU Academic Courses to Industrial Project Tasks | 22 |
+| **Table A.1** | Month 1 Internship Activity Log (Weeks 1 – 4, Days 1 – 20) | 32 |
+| **Table A.2** | Month 2 Internship Activity Log (Weeks 5 – 9, Days 21 – 45) | 38 |
+| **Table B.1** | ASTU Student Internship Self-Evaluation Scoring Rubric | 44 |
+| **Table C.1** | Core Database Entities and Relational Schema Definition | 48 |
+| **Table C.2** | RESTful API Endpoints Catalog for INSA-KMS | 51 |
 
 ---
 
@@ -278,12 +277,11 @@ ANNEXES (Separate from Main Report Page Count) ............................... 3
 
 | Figure Number | Figure Caption | Page |
 |---|---|---|
-| **Figure 1.1** | Organizational Structure and Key Directorates of INSA | 5 |
-| **Figure 3.1** | High-Level 3-Tier Enterprise Architecture of INSA-KMS | 13 |
-| **Figure 3.2** | OpenID Connect (OIDC) Authorization Code Flow with Keycloak 26 | 15 |
-| **Figure 3.3** | Asynchronous Document Ingestion, SHA-256 Hashing, and Tika FTS Pipeline | 19 |
-| **Figure 3.4** | Secure Jitsi Meet Video Session Lifecycle and HMAC-SHA256 Token Flow | 24 |
-| **Figure 3.5** | Spring AOP Tamper-Evident Audit Logging Interceptor Architecture | 26 |
-| **Figure C.1** | Entity Relationship Diagram (ERD) of the KMS PostgreSQL Database | 72 |
-| **Figure C.2** | Maven Surefire Test Execution Output (20/20 Passed) | 76 |
-| **Figure C.3** | Direct Prosody XMPP BOSH Cryptographic Handshake Verification | 77 |
+| **Figure 3.1** | High-Level 3-Tier Enterprise Architecture of INSA-KMS | 10 |
+| **Figure 3.2** | OpenID Connect (OIDC) Authorization Code Flow with Keycloak 26 | 12 |
+| **Figure 3.3** | Asynchronous Document Ingestion, SHA-256 Hashing, and Tika FTS Pipeline | 15 |
+| **Figure 3.4** | Secure Jitsi Meet Video Session Lifecycle and HMAC-SHA256 Token Flow | 18 |
+| **Figure 3.5** | Spring AOP Tamper-Evident Audit Logging Interceptor Architecture | 20 |
+| **Figure C.1** | Entity Relationship Diagram (ERD) of the KMS PostgreSQL Database | 49 |
+| **Figure C.2** | Maven Surefire Test Execution Output (20/20 Passed) | 53 |
+| **Figure C.3** | Direct Prosody XMPP BOSH Cryptographic Handshake Verification | 54 |
